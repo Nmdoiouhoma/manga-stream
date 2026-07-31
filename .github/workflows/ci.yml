@@ -1,0 +1,384 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# A new push on a branch cancels the previous, still-running pipeline.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PHP_VERSION: '8.4'
+  NODE_VERSION: '24'
+
+jobs:
+
+  # =========================================================================
+  # Detects which parts of the monorepo actually exist / changed.
+  # The backend and frontend are scaffolded in parallel, so every downstream
+  # job must be able to skip cleanly instead of failing on missing code.
+  # =========================================================================
+  detect:
+    name: Detect workspaces
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.check.outputs.backend }}
+      frontend: ${{ steps.check.outputs.frontend }}
+      compose: ${{ steps.check.outputs.compose }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        name: Look for composer.json / package.json / docker-compose.yml
+        run: |
+          set -euo pipefail
+
+          if [ -f backend/composer.json ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Backend skipped::backend/composer.json not found yet"
+          fi
+
+          if [ -f frontend/package.json ]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Frontend skipped::frontend/package.json not found yet"
+          fi
+
+          if [ -f docker-compose.yml ]; then
+            echo "compose=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "compose=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # =========================================================================
+  # Backend :: PHP 8.4 + PostgreSQL 16
+  # =========================================================================
+  backend:
+    name: Backend (PHP ${{ needs.detect.outputs.backend == 'true' && '8.4' || 'skipped' }})
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: manga_stream_test
+          POSTGRES_USER: manga
+          POSTGRES_PASSWORD: manga
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U manga -d manga_stream_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      APP_ENV: test
+      APP_DEBUG: '0'
+      APP_SECRET: ci_secret_not_used_in_production
+      DATABASE_URL: postgresql://manga:manga@127.0.0.1:5432/manga_stream_test?serverVersion=16&charset=utf8
+      MERCURE_URL: http://localhost:3000/.well-known/mercure
+      MERCURE_PUBLIC_URL: http://localhost:3000/.well-known/mercure
+      MERCURE_JWT_SECRET: '!ChangeThisMercureHubJWTSecretKey!'
+      JWT_SECRET_KEY: '%kernel.project_dir%/config/jwt/private.pem'
+      JWT_PUBLIC_KEY: '%kernel.project_dir%/config/jwt/public.pem'
+      JWT_PASSPHRASE: ci_passphrase
+      CORS_ALLOW_ORIGIN: '^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$'
+      ANILIST_API_URL: https://graphql.anilist.co
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_pgsql, intl, zip, opcache, ctype, iconv
+          coverage: none
+          tools: composer:v2
+          ini-values: memory_limit=512M
+
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-publish || echo "::warning::composer validate reported issues"
+
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php${{ env.PHP_VERSION }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Generate JWT keypair (if the bundle is installed)
+        run: |
+          if php bin/console list lexik:jwt --no-ansi >/dev/null 2>&1; then
+            php bin/console lexik:jwt:generate-keypair --skip-if-exists --no-interaction
+          else
+            echo "lexik/jwt-authentication-bundle not installed yet -> skip"
+          fi
+
+      - name: Lint YAML configuration
+        run: |
+          if [ -d config ]; then
+            php bin/console lint:yaml config --parse-tags || echo "::warning::lint:yaml reported issues"
+          fi
+
+      - name: Lint the service container
+        run: php bin/console lint:container
+
+      - name: Run database migrations (if any)
+        run: |
+          if php bin/console list doctrine:migrations --no-ansi >/dev/null 2>&1 \
+             && [ -d migrations ] && [ -n "$(ls -A migrations 2>/dev/null)" ]; then
+            php bin/console doctrine:database:create --if-not-exists --no-interaction
+            php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+          else
+            echo "no doctrine migrations yet -> skip"
+          fi
+
+      - name: PHPUnit
+        run: |
+          if [ -f phpunit.xml.dist ] || [ -f phpunit.xml ]; then
+            if [ -x vendor/bin/phpunit ]; then
+              vendor/bin/phpunit --colors=never
+            elif [ -x bin/phpunit ]; then
+              php bin/phpunit --colors=never
+            else
+              echo "::warning title=PHPUnit missing::phpunit config found but no phpunit binary installed -> skip"
+            fi
+          else
+            echo "::notice title=No tests yet::phpunit.xml.dist not found -> skip"
+          fi
+
+      - name: PHPStan (optional)
+        run: |
+          if [ -f phpstan.neon ] || [ -f phpstan.neon.dist ] || [ -f phpstan.dist.neon ]; then
+            if [ -x vendor/bin/phpstan ]; then
+              vendor/bin/phpstan analyse --no-progress
+            else
+              echo "::warning::phpstan config found but vendor/bin/phpstan is missing -> skip"
+            fi
+          else
+            echo "phpstan not configured -> skip"
+          fi
+
+      - name: PHP-CS-Fixer (optional, dry-run)
+        run: |
+          if [ -f .php-cs-fixer.dist.php ] || [ -f .php-cs-fixer.php ]; then
+            if [ -x vendor/bin/php-cs-fixer ]; then
+              vendor/bin/php-cs-fixer fix --dry-run --diff --no-interaction
+            else
+              echo "::warning::php-cs-fixer config found but the binary is missing -> skip"
+            fi
+          else
+            echo "php-cs-fixer not configured -> skip"
+          fi
+
+  # =========================================================================
+  # Frontend :: Node 24 + Vite
+  # =========================================================================
+  frontend:
+    name: Frontend (Node 24)
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    env:
+      VITE_API_URL: http://localhost:8000/api
+      VITE_MERCURE_URL: http://localhost:3000/.well-known/mercure
+      VITE_USE_MOCKS: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('frontend/package-lock.json', 'frontend/package.json') }}
+          restore-keys: npm-${{ runner.os }}-node${{ env.NODE_VERSION }}-
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "::warning title=No lockfile::package-lock.json is missing, falling back to npm install. Commit the lockfile to make CI reproducible."
+            npm install
+          fi
+
+      - name: Lint
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.lint ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "::notice title=No lint script::skip"
+          fi
+
+      - name: Type-check
+        run: |
+          if [ -f tsconfig.json ] && node -e "process.exit(require('./package.json').scripts?.typecheck ? 0 : 1)"; then
+            npm run typecheck
+          else
+            echo "type-check runs as part of the build (tsc -b) -> skip standalone step"
+          fi
+
+      - name: Build
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
+            npm run build
+          else
+            echo "::warning title=No build script::skip"
+          fi
+
+      - name: Unit tests (optional)
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            npm run test -- --run 2>/dev/null || npm run test
+          else
+            echo "::notice title=No test script::skip"
+          fi
+
+      - name: Upload build artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 3
+          if-no-files-found: ignore
+
+  # =========================================================================
+  # Docker :: compose syntax + image builds
+  # =========================================================================
+  docker:
+    name: Docker compose
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.compose == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env from the template
+        run: cp .env.example .env
+
+      - name: Validate the compose file
+        run: docker compose config --quiet && docker compose config
+
+      - name: Check that the shared API contract is not ignored
+        run: |
+          if [ -f docs/openapi.yaml ]; then
+            if git check-ignore -q docs/openapi.yaml; then
+              echo "::error title=openapi.yaml is gitignored::docs/openapi.yaml is the shared backend<->frontend contract and must stay tracked"
+              exit 1
+            fi
+            echo "docs/openapi.yaml is tracked, good"
+          else
+            echo "::notice::docs/openapi.yaml not written yet -> skip"
+          fi
+
+      - name: Pull the third-party images
+        run: docker compose pull --ignore-buildable --quiet || true
+
+      - name: Build the backend image
+        if: needs.detect.outputs.backend == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./infra/backend/Dockerfile
+          target: dev
+          build-contexts: infra=./infra
+          push: false
+          load: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build the frontend image (dev + prod stages)
+        if: needs.detect.outputs.frontend == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./infra/frontend/Dockerfile
+          target: prod
+          build-contexts: infra=./infra
+          push: false
+          load: false
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: "Smoke test: database + mercure actually start"
+        run: |
+          set -e
+          docker compose up -d database mercure
+          for i in $(seq 1 30); do
+            db=$(docker inspect --format '{{ .State.Health.Status }}' manga-stream-database 2>/dev/null || echo starting)
+            hub=$(docker inspect --format '{{ .State.Health.Status }}' manga-stream-mercure 2>/dev/null || echo starting)
+            echo "attempt $i :: database=$db mercure=$hub"
+            [ "$db" = "healthy" ] && [ "$hub" = "healthy" ] && break
+            sleep 3
+          done
+          docker compose ps
+          [ "$(docker inspect --format '{{ .State.Health.Status }}' manga-stream-database)" = "healthy" ]
+          [ "$(docker inspect --format '{{ .State.Health.Status }}' manga-stream-mercure)" = "healthy" ]
+          curl -sf http://localhost:3000/healthz > /dev/null && echo "mercure /healthz OK"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+  # =========================================================================
+  # Single required status check for branch protection.
+  # =========================================================================
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    needs: [detect, backend, frontend, docker]
+    if: always()
+    steps:
+      - name: Fail if any job failed
+        run: |
+          results='${{ join(needs.*.result, ' ') }}'
+          echo "job results: $results"
+          for r in $results; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::at least one job did not succeed"
+              exit 1
+            fi
+          done
+          echo "all jobs succeeded or were skipped"

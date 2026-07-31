@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "typescript/no-explicit-any": "error"
+  },
+  "ignorePatterns": ["dist", "public/mockServiceWorker.js"]
+}

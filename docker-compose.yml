@@ -1,0 +1,215 @@
+# ===========================================================================
+# manga-stream :: development stack
+#
+#   cp .env.example .env && docker compose up -d
+#
+#   http://localhost:5173  frontend (Vite dev server, HMR)
+#   http://localhost:8000  backend API (nginx -> php-fpm -> Symfony)
+#   http://localhost:3000  Mercure hub (/.well-known/mercure)
+#   postgres://localhost:5432  database
+#
+# Internal hostnames (container -> container): database, backend, nginx,
+# mercure, frontend. See infra/README.md.
+# ===========================================================================
+
+name: manga-stream
+
+services:
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL 16
+  # -------------------------------------------------------------------------
+  database:
+    image: postgres:16-alpine
+    container_name: manga-stream-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-manga_stream}
+      POSTGRES_USER: ${POSTGRES_USER:-manga}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-manga}
+      # Deterministic collation, avoids "database was created with a different
+      # collation version" warnings between alpine upgrades.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "pg_isready -U ${POSTGRES_USER:-manga} -d ${POSTGRES_DB:-manga_stream} -h 127.0.0.1"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
+  # Symfony / PHP-FPM  (no published port: reached through nginx)
+  # -------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../infra/backend/Dockerfile
+      target: dev
+      additional_contexts:
+        infra: ./infra
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    container_name: manga-stream-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      APP_DEBUG: ${APP_DEBUG:-1}
+      APP_SECRET: ${APP_SECRET:-changeme_dev_secret}
+      # Hostname is `database` (the compose service name), NOT localhost.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://manga:manga@database:5432/manga_stream?serverVersion=16&charset=utf8}
+      DATABASE_HOST: database
+      DATABASE_PORT: 5432
+      # Server-side publishing endpoint (container -> container).
+      MERCURE_URL: ${MERCURE_URL:-http://mercure/.well-known/mercure}
+      # Endpoint advertised to browsers in the Link header.
+      MERCURE_PUBLIC_URL: ${MERCURE_PUBLIC_URL:-http://localhost:3000/.well-known/mercure}
+      MERCURE_JWT_SECRET: ${MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-%kernel.project_dir%/config/jwt/private.pem}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-%kernel.project_dir%/config/jwt/public.pem}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:-manga_stream_dev_passphrase}
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$$}
+      ANILIST_API_URL: ${ANILIST_API_URL:-https://graphql.anilist.co}
+      # Base URL used by Symfony to build absolute URLs outside of an HTTP
+      # request (CLI commands, mailer, Mercure Link headers).
+      DEFAULT_URI: ${DEFAULT_URI:-http://localhost:8000}
+      # Set to 1 to run doctrine:migrations:migrate on container start.
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
+      PHP_IDE_CONFIG: serverName=manga-stream
+    volumes:
+      - ./backend:/var/www/html:cached
+      - composer_cache:/composer
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -v > /dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
+  # nginx -> Symfony front controller
+  # -------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: manga-stream-nginx
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:80"
+    volumes:
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # nginx needs the source tree to resolve $realpath_root and serve
+      # anything sitting in public/ (uploads, favicon, ...).
+      - ./backend:/var/www/html:ro
+    depends_on:
+      - backend
+    healthcheck:
+      # Exercises the whole chain nginx -> php-fpm -> Symfony and accepts any
+      # non-5xx status: a 404 (no route defined yet) still proves the stack is
+      # up, whereas a 502 (php-fpm down) correctly fails.
+      test:
+        - CMD-SHELL
+        - "[ \"$$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1/)\" -lt 500 ]"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
+  # Vite dev server (React + TypeScript)
+  # -------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/frontend/Dockerfile
+      target: dev
+      additional_contexts:
+        infra: ./infra
+      args:
+        # Leave empty. Temporary escape hatch for peer-dependency conflicts,
+        # see infra/frontend/Dockerfile.
+        NPM_INSTALL_FLAGS: ${NPM_INSTALL_FLAGS:-}
+    container_name: manga-stream-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      # Vite only exposes variables prefixed with VITE_ to the browser bundle.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+      VITE_MERCURE_URL: ${VITE_MERCURE_URL:-http://localhost:3000/.well-known/mercure}
+      VITE_USE_MOCKS: ${VITE_USE_MOCKS:-false}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app:cached
+      # Keep the container node_modules isolated from the host one
+      # (native bindings differ between macOS and alpine/linux).
+      - frontend_node_modules:/app/node_modules
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
+  # Mercure hub (real-time SSE)
+  # -------------------------------------------------------------------------
+  mercure:
+    image: dunglas/mercure:latest
+    container_name: manga-stream-mercure
+    restart: unless-stopped
+    environment:
+      # ":80" forces plain HTTP. Without it Caddy tries to provision a TLS
+      # certificate for "localhost" and the hub never becomes reachable.
+      SERVER_NAME: ":80"
+      MERCURE_PUBLISHER_JWT_KEY: ${MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
+      MERCURE_PUBLISHER_JWT_ALG: HS256
+      MERCURE_SUBSCRIBER_JWT_KEY: ${MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
+      MERCURE_SUBSCRIBER_JWT_ALG: HS256
+      # DEV ONLY: `anonymous` lets the browser subscribe without a JWT and
+      # `demo` exposes the debug UI on /.well-known/mercure/ui/.
+      # Remove both in production.
+      MERCURE_EXTRA_DIRECTIVES: |
+        transport bolt {
+          path /data/mercure.db
+        }
+        cors_origins ${MERCURE_CORS_ORIGINS:-http://localhost:5173 http://127.0.0.1:5173 http://localhost:8000}
+        publish_origins ${MERCURE_PUBLISH_ORIGINS:-http://localhost:5173 http://localhost:8000 http://localhost:3000}
+        anonymous
+        demo
+        subscriptions
+    ports:
+      - "${MERCURE_PORT:-3000}:80"
+    volumes:
+      - mercure_data:/data
+      - mercure_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - manga-stream
+
+networks:
+  manga-stream:
+    driver: bridge
+
+volumes:
+  database_data:
+  composer_cache:
+  frontend_node_modules:
+  mercure_data:
+  mercure_config:

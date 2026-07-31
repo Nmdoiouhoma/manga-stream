@@ -1,0 +1,28 @@
+api_platform:
+    title: 'Manga Stream API'
+    description: 'API REST du projet manga-stream : catalogue anime/manga, favoris, progression, commentaires, notifications et recommandations.'
+    version: '1.0.0'
+
+    # Formats exposés. jsonld (Hydra) reste le format par défaut ;
+    # `json` est activé pour faciliter la consommation par le client TypeScript du frontend.
+    formats:
+        jsonld: ['application/ld+json']
+        json: ['application/json']
+    docs_formats:
+        jsonld: ['application/ld+json']
+        json: ['application/json']
+        jsonopenapi: ['application/vnd.openapi+json']
+        yamlopenapi: ['application/vnd.openapi+yaml']
+        html: ['text/html']
+    error_formats:
+        jsonproblem: ['application/problem+json']
+        jsonld: ['application/ld+json']
+
+    defaults:
+        stateless: true
+        cache_headers:
+            vary: ['Content-Type', 'Authorization', 'Origin']
+        pagination_enabled: true
+        pagination_client_items_per_page: true
+        pagination_items_per_page: 30
+        pagination_maximum_items_per_page: 100
