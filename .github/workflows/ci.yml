@@ -183,10 +183,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ ! -f phpunit.xml.dist ] && [ ! -f phpunit.xml ]; then
-            echo "::notice title=No test suite yet::neither phpunit.xml.dist nor phpunit.xml -> step skipped"
+          # Three accepted names: the historical `phpunit.xml.dist`, the newer
+          # `phpunit.dist.xml` (the one this project actually uses) and the
+          # local override `phpunit.xml`. Forgetting one silently skips the
+          # whole test suite — exactly the trap we are closing here.
+          config=""
+          for candidate in phpunit.dist.xml phpunit.xml.dist phpunit.xml; do
+            if [ -f "$candidate" ]; then config="$candidate"; break; fi
+          done
+
+          if [ -z "$config" ]; then
+            echo "::notice title=No test suite yet::no phpunit configuration found -> step skipped"
             exit 0
           fi
+          echo "configuration found: $config"
 
           if [ -x vendor/bin/phpunit ]; then
             PHPUNIT="vendor/bin/phpunit"
@@ -199,6 +209,11 @@ jobs:
 
           echo "running $PHPUNIT against $DATABASE_URL (test env -> _test suffix)"
           $PHPUNIT --colors=never
+
+          # PHPUnit exits 0 when the suite is empty ("No tests executed!").
+          # Not an error today — the backend has committed its configuration
+          # but not its tests yet — so we only make the situation visible.
+          echo "::notice title=PHPUnit ran::configuration $config. If the report says 'No tests executed', the suite is still empty."
 
       - name: PHPStan (optional)
         run: |
