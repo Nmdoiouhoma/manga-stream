@@ -85,13 +85,25 @@ function linkFor(payload: Record<string, string | null>): string | null {
   return null
 }
 
-function toEntry(notification: NotificationResource): NotificationEntry {
+/**
+ * @param unreadIris IRIs known to be unread, from the `?isRead=false` query.
+ *   Used only as a fallback — see `useNotifications`.
+ */
+function toEntry(notification: NotificationResource, unreadIris: Set<string>): NotificationEntry {
   const payload = notification.payload ?? {}
+  const iri = notification['@id']
+
   return {
-    iri: notification['@id'],
-    id: notification.id ?? idFromIri(notification['@id']),
+    iri,
+    id: notification.id ?? idFromIri(iri),
     type: notification.type,
-    isRead: notification.isRead,
+    // ⚠️ The contract declares `isRead` as a **required** property of the read
+    // group, but the running backend never serialises it (verified
+    // 2026-08-01: absent from POST, GET and PATCH responses alike). The value
+    // is stored correctly — `?isRead=` filters on it just fine — so the flag is
+    // recovered from the filtered query instead. Reported upstream; the day it
+    // is fixed, the field wins and the fallback goes unused.
+    isRead: typeof notification.isRead === 'boolean' ? notification.isRead : !unreadIris.has(iri),
     createdAt: notification.createdAt ?? null,
     payload,
     message: describe(notification.type, payload),
@@ -111,16 +123,25 @@ export function useNotifications() {
     queryKey: notificationsQueryKey(userIri),
     enabled: userIri !== null,
     queryFn: async () => {
-      const result = await apiClient.GET('/api/notifications', {
-        params: {
-          query: {
-            user: userIri as string,
-            itemsPerPage: 50,
-            'order[createdAt]': 'desc',
+      // Two requests on purpose: the second one is the only reliable way to
+      // know what is unread while the backend omits `isRead` from its payloads
+      // (see `toEntry`). It is a small, filtered collection, and it costs
+      // nothing once the backend serialises the field again.
+      const [allResult, unreadResult] = await Promise.all([
+        apiClient.GET('/api/notifications', {
+          params: {
+            query: { user: userIri as string, itemsPerPage: 50, 'order[createdAt]': 'desc' },
           },
-        },
-      })
-      return normalizeCollection(unwrap(result)).member.map(toEntry)
+        }),
+        apiClient.GET('/api/notifications', {
+          params: { query: { user: userIri as string, itemsPerPage: 50, isRead: false } },
+        }),
+      ])
+
+      const unreadIris = new Set(
+        normalizeCollection(unwrap(unreadResult)).member.map((item) => item['@id']),
+      )
+      return normalizeCollection(unwrap(allResult)).member.map((item) => toEntry(item, unreadIris))
     },
   })
 
