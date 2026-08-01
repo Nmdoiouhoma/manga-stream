@@ -74,13 +74,18 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: manga_stream_test
+          # Base database matching DATABASE_URL below. Doctrine appends the
+          # `_test` suffix by itself in the test environment (see the
+          # `when@test: dbname_suffix` block in config/packages/doctrine.yaml),
+          # so the tests really run on `manga_stream_test`, created by the
+          # "Prepare the test database" step.
+          POSTGRES_DB: manga_stream
           POSTGRES_USER: manga
           POSTGRES_PASSWORD: manga
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U manga -d manga_stream_test"
+          --health-cmd "pg_isready -U manga -d manga_stream"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -89,10 +94,13 @@ jobs:
       APP_ENV: test
       APP_DEBUG: '0'
       APP_SECRET: ci_secret_not_used_in_production
-      DATABASE_URL: postgresql://manga:manga@127.0.0.1:5432/manga_stream_test?serverVersion=16&charset=utf8
+      # 127.0.0.1 and not `database`: in CI the service container is published
+      # on the runner's localhost, there is no compose network here.
+      DATABASE_URL: postgresql://manga:manga@127.0.0.1:5432/manga_stream?serverVersion=16&charset=utf8
       MERCURE_URL: http://localhost:3000/.well-known/mercure
       MERCURE_PUBLIC_URL: http://localhost:3000/.well-known/mercure
       MERCURE_JWT_SECRET: '!ChangeThisMercureHubJWTSecretKey!'
+      MESSENGER_TRANSPORT_DSN: doctrine://default?auto_setup=0
       JWT_SECRET_KEY: '%kernel.project_dir%/config/jwt/private.pem'
       JWT_PUBLIC_KEY: '%kernel.project_dir%/config/jwt/public.pem'
       JWT_PASSPHRASE: ci_passphrase
@@ -128,13 +136,21 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
 
-      - name: Generate JWT keypair (if the bundle is installed)
+      # Generated with plain openssl rather than `lexik:jwt:generate-keypair`:
+      # it needs no Symfony kernel boot, so the keys exist BEFORE any console
+      # command runs. A JWT-secured application refuses to boot without them.
+      # These CI keys live and die with the runner and are never committed.
+      - name: Generate an ephemeral JWT keypair
         run: |
-          if php bin/console list lexik:jwt --no-ansi >/dev/null 2>&1; then
-            php bin/console lexik:jwt:generate-keypair --skip-if-exists --no-interaction
-          else
-            echo "lexik/jwt-authentication-bundle not installed yet -> skip"
-          fi
+          set -euo pipefail
+          mkdir -p config/jwt
+          openssl genpkey -quiet -out config/jwt/private.pem \
+            -aes256 -pass env:JWT_PASSPHRASE \
+            -algorithm rsa -pkeyopt rsa_keygen_bits:4096
+          openssl pkey -in config/jwt/private.pem -passin env:JWT_PASSPHRASE \
+            -out config/jwt/public.pem -pubout
+          chmod 600 config/jwt/private.pem
+          echo "keypair generated in backend/config/jwt/ (CI only)"
 
       - name: Lint YAML configuration
         run: |
@@ -145,29 +161,44 @@ jobs:
       - name: Lint the service container
         run: php bin/console lint:container
 
-      - name: Run database migrations (if any)
+      # APP_ENV=test is set for the whole job, so every console command below
+      # already targets the test environment — and therefore the `_test`
+      # suffixed database. We create it, then replay the migrations on it: the
+      # tests must run against the real schema, `messenger_messages` included.
+      - name: Prepare the test database
         run: |
-          if php bin/console list doctrine:migrations --no-ansi >/dev/null 2>&1 \
-             && [ -d migrations ] && [ -n "$(ls -A migrations 2>/dev/null)" ]; then
-            php bin/console doctrine:database:create --if-not-exists --no-interaction
+          set -euo pipefail
+          php bin/console doctrine:database:create --if-not-exists --no-interaction
+          if [ -d migrations ] && [ -n "$(ls -A migrations 2>/dev/null)" ]; then
             php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
           else
-            echo "no doctrine migrations yet -> skip"
+            echo "::notice title=No migration yet::migrations/ is empty -> schema left untouched"
           fi
 
+      # THE test step. As soon as the backend ships a phpunit configuration the
+      # suite runs for real and a single failing test fails the whole pipeline:
+      # no `|| true`, no `continue-on-error`, no warning-instead-of-error.
+      # The only tolerated case is "no test written yet".
       - name: PHPUnit
         run: |
-          if [ -f phpunit.xml.dist ] || [ -f phpunit.xml ]; then
-            if [ -x vendor/bin/phpunit ]; then
-              vendor/bin/phpunit --colors=never
-            elif [ -x bin/phpunit ]; then
-              php bin/phpunit --colors=never
-            else
-              echo "::warning title=PHPUnit missing::phpunit config found but no phpunit binary installed -> skip"
-            fi
-          else
-            echo "::notice title=No tests yet::phpunit.xml.dist not found -> skip"
+          set -euo pipefail
+
+          if [ ! -f phpunit.xml.dist ] && [ ! -f phpunit.xml ]; then
+            echo "::notice title=No test suite yet::neither phpunit.xml.dist nor phpunit.xml -> step skipped"
+            exit 0
           fi
+
+          if [ -x vendor/bin/phpunit ]; then
+            PHPUNIT="vendor/bin/phpunit"
+          elif [ -x bin/phpunit ]; then
+            PHPUNIT="php bin/phpunit"
+          else
+            echo "::error title=PHPUnit is missing::a phpunit configuration exists but no binary is installed. Run: composer require --dev symfony/test-pack"
+            exit 1
+          fi
+
+          echo "running $PHPUNIT against $DATABASE_URL (test env -> _test suffix)"
+          $PHPUNIT --colors=never
 
       - name: PHPStan (optional)
         run: |
@@ -297,6 +328,27 @@ jobs:
       - name: Validate the compose file
         run: docker compose config --quiet && docker compose config
 
+      # The entrypoint drives both php-fpm and the Messenger worker: a syntax
+      # error there takes down the backend AND the queue. `bash -n` parses the
+      # script without executing anything.
+      - name: Check the shell scripts syntax
+        run: |
+          set -euo pipefail
+          for script in infra/*/docker-entrypoint.sh; do
+            bash -n "$script" && echo "syntax OK: $script"
+          done
+
+      # The worker is not booted here on purpose: with no vendor/ in the repo
+      # it would spend minutes on `composer install` for a very weak signal.
+      # We only assert that compose really declares it and points it at the
+      # worker command.
+      - name: Check that the Messenger worker is declared
+        run: |
+          set -euo pipefail
+          docker compose config --services | grep -qx worker
+          docker compose config | grep -q -- '- worker'
+          echo 'the worker service is declared and runs the worker command'
+
       - name: Check that the shared API contract is not ignored
         run: |
           if [ -f docs/openapi.yaml ]; then
@@ -308,6 +360,31 @@ jobs:
           else
             echo "::notice::docs/openapi.yaml not written yet -> skip"
           fi
+
+      # This repository is PUBLIC. A committed private.pem or .env would let
+      # anyone forge a JWT for any account. Belt and braces: we check both that
+      # the paths are gitignored and that nothing sensitive is already tracked.
+      - name: Check that no secret can be committed
+        run: |
+          set -euo pipefail
+          status=0
+
+          for path in backend/config/jwt/private.pem backend/config/jwt/public.pem .env; do
+            if git check-ignore -q "$path"; then
+              echo "ignored (good): $path"
+            else
+              echo "::error title=$path is not gitignored::this file holds secrets and must never reach a public repository"
+              status=1
+            fi
+          done
+
+          tracked=$(git ls-files -- 'backend/config/jwt/*' '.env' '**/*.pem' | grep -v '\.example$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error title=Secret tracked by git::$(echo "$tracked" | tr '\n' ' ')"
+            status=1
+          fi
+
+          exit $status
 
       - name: Pull the third-party images
         run: docker compose pull --ignore-buildable --quiet || true
