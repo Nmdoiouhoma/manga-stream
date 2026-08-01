@@ -1156,10 +1156,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -1182,10 +1181,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -1464,10 +1462,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -1487,10 +1484,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -2021,7 +2017,16 @@ export interface components {
             payload?: {
                 [key: string]: string | null;
             };
-            /** @default false */
+            /**
+             * @description Accesseur nommé `getIsRead()` et non `isRead()` : pour une propriété `isRead`,
+             *     Symfony PropertyInfo cherche `getIsRead`/`isIsRead`/`hasIsRead`. `isRead()` est
+             *     lu comme l'accesseur d'une propriété `read`, si bien que `isRead` passait pour
+             *     non lisible et disparaissait silencieusement de TOUTES les réponses — alors que
+             *     le contrat la déclarait requise et que l'écriture, elle, fonctionnait
+             *     (`setIsRead()` est bien détecté). Côté client, chaque notification revenait donc
+             *     éternellement non lue.
+             * @default false
+             */
             isRead: boolean;
             /** Format: date-time */
             createdAt?: string;
@@ -2038,7 +2043,16 @@ export interface components {
             payload?: {
                 [key: string]: string | null;
             };
-            /** @default false */
+            /**
+             * @description Accesseur nommé `getIsRead()` et non `isRead()` : pour une propriété `isRead`,
+             *     Symfony PropertyInfo cherche `getIsRead`/`isIsRead`/`hasIsRead`. `isRead()` est
+             *     lu comme l'accesseur d'une propriété `read`, si bien que `isRead` passait pour
+             *     non lisible et disparaissait silencieusement de TOUTES les réponses — alors que
+             *     le contrat la déclarait requise et que l'écriture, elle, fonctionnait
+             *     (`setIsRead()` est bien détecté). Côté client, chaque notification revenait donc
+             *     éternellement non lue.
+             * @default false
+             */
             isRead: boolean;
             /** Format: date-time */
             createdAt?: string;
@@ -2048,10 +2062,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -2063,7 +2076,16 @@ export interface components {
             payload?: {
                 [key: string]: string | null;
             };
-            /** @default false */
+            /**
+             * @description Accesseur nommé `getIsRead()` et non `isRead()` : pour une propriété `isRead`,
+             *     Symfony PropertyInfo cherche `getIsRead`/`isIsRead`/`hasIsRead`. `isRead()` est
+             *     lu comme l'accesseur d'une propriété `read`, si bien que `isRead` passait pour
+             *     non lisible et disparaissait silencieusement de TOUTES les réponses — alors que
+             *     le contrat la déclarait requise et que l'écriture, elle, fonctionnait
+             *     (`setIsRead()` est bien détecté). Côté client, chaque notification revenait donc
+             *     éternellement non lue.
+             * @default false
+             */
             isRead: boolean;
         };
         /** @description Notification utilisateur. */
@@ -2071,10 +2093,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -2086,7 +2107,16 @@ export interface components {
             payload?: {
                 [key: string]: string | null;
             };
-            /** @default false */
+            /**
+             * @description Accesseur nommé `getIsRead()` et non `isRead()` : pour une propriété `isRead`,
+             *     Symfony PropertyInfo cherche `getIsRead`/`isIsRead`/`hasIsRead`. `isRead()` est
+             *     lu comme l'accesseur d'une propriété `read`, si bien que `isRead` passait pour
+             *     non lisible et disparaissait silencieusement de TOUTES les réponses — alors que
+             *     le contrat la déclarait requise et que l'écriture, elle, fonctionnait
+             *     (`setIsRead()` est bien détecté). Côté client, chaque notification revenait donc
+             *     éternellement non lue.
+             * @default false
+             */
             isRead: boolean;
         };
         /** @description Notification utilisateur. */
@@ -2101,7 +2131,16 @@ export interface components {
             payload?: {
                 [key: string]: string | null;
             };
-            /** @default false */
+            /**
+             * @description Accesseur nommé `getIsRead()` et non `isRead()` : pour une propriété `isRead`,
+             *     Symfony PropertyInfo cherche `getIsRead`/`isIsRead`/`hasIsRead`. `isRead()` est
+             *     lu comme l'accesseur d'une propriété `read`, si bien que `isRead` passait pour
+             *     non lisible et disparaissait silencieusement de TOUTES les réponses — alors que
+             *     le contrat la déclarait requise et que l'écriture, elle, fonctionnait
+             *     (`setIsRead()` est bien détecté). Côté client, chaque notification revenait donc
+             *     éternellement non lue.
+             * @default false
+             */
             isRead: boolean;
             /** Format: date-time */
             createdAt?: string;
@@ -2118,7 +2157,16 @@ export interface components {
             payload?: {
                 [key: string]: string | null;
             };
-            /** @default false */
+            /**
+             * @description Accesseur nommé `getIsRead()` et non `isRead()` : pour une propriété `isRead`,
+             *     Symfony PropertyInfo cherche `getIsRead`/`isIsRead`/`hasIsRead`. `isRead()` est
+             *     lu comme l'accesseur d'une propriété `read`, si bien que `isRead` passait pour
+             *     non lisible et disparaissait silencieusement de TOUTES les réponses — alors que
+             *     le contrat la déclarait requise et que l'écriture, elle, fonctionnait
+             *     (`setIsRead()` est bien détecté). Côté client, chaque notification revenait donc
+             *     éternellement non lue.
+             * @default false
+             */
             isRead: boolean;
             /** Format: date-time */
             createdAt?: string;
@@ -2166,10 +2214,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -2199,10 +2246,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -2312,10 +2358,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;
@@ -2347,10 +2392,9 @@ export interface components {
             /**
              * Format: iri-reference
              * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
-             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
-             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
-             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
-             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+             *     imposé à partir du jeton par {@see \App\State\UserOwnedProvider}, qui s'exécute
+             *     avant la validation. Le rendre obligatoire ici forcerait le client à envoyer une
+             *     valeur de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet.
              * @example https://example.com/
              */
             user?: string;

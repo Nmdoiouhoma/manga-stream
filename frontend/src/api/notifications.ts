@@ -85,11 +85,7 @@ function linkFor(payload: Record<string, string | null>): string | null {
   return null
 }
 
-/**
- * @param unreadIris IRIs known to be unread, from the `?isRead=false` query.
- *   Used only as a fallback — see `useNotifications`.
- */
-function toEntry(notification: NotificationResource, unreadIris: Set<string>): NotificationEntry {
+function toEntry(notification: NotificationResource): NotificationEntry {
   const payload = notification.payload ?? {}
   const iri = notification['@id']
 
@@ -97,15 +93,13 @@ function toEntry(notification: NotificationResource, unreadIris: Set<string>): N
     iri,
     id: notification.id ?? idFromIri(iri),
     type: notification.type,
-    // The field wins whenever it is there. The fallback exists because the
-    // backend spent part of phase 2 **not serialising `isRead` at all** while
-    // the contract declared it required — the value was stored fine (`?isRead=`
-    // filtered on it correctly), it just never reached the client, so every
-    // notification read as unread forever and "mark as read" was undone by the
-    // next refetch. Fixed backend-side on 2026-08-02; kept as a safety net
-    // until that fix is committed and stable, then delete this branch and the
-    // second query in `useNotifications`.
-    isRead: typeof notification.isRead === 'boolean' ? notification.isRead : !unreadIris.has(iri),
+    // Read straight off the resource since 2026-08-02. During phase 2 the
+    // backend did not serialise `isRead` at all (the accessor was named
+    // `isRead()`, which Symfony PropertyInfo reads as the getter of a `read`
+    // property), so the front had to infer it from a second `?isRead=false`
+    // query. The accessor is now `getIsRead()`, the field is in every response
+    // — verified against the running backend — and both crutches are gone.
+    isRead: notification.isRead,
     createdAt: notification.createdAt ?? null,
     payload,
     message: describe(notification.type, payload),
@@ -125,24 +119,12 @@ export function useNotifications() {
     queryKey: notificationsQueryKey(userIri),
     enabled: userIri !== null,
     queryFn: async () => {
-      // Two requests on purpose: the second is the fallback source of truth for
-      // the unread flag (see `toEntry`). Small, filtered collection; remove it
-      // together with the fallback once `isRead` is reliably serialised.
-      const [allResult, unreadResult] = await Promise.all([
-        apiClient.GET('/api/notifications', {
-          params: {
-            query: { user: userIri as string, itemsPerPage: 50, 'order[createdAt]': 'desc' },
-          },
-        }),
-        apiClient.GET('/api/notifications', {
-          params: { query: { user: userIri as string, itemsPerPage: 50, isRead: false } },
-        }),
-      ])
-
-      const unreadIris = new Set(
-        normalizeCollection(unwrap(unreadResult)).member.map((item) => item['@id']),
-      )
-      return normalizeCollection(unwrap(allResult)).member.map((item) => toEntry(item, unreadIris))
+      const result = await apiClient.GET('/api/notifications', {
+        params: {
+          query: { user: userIri as string, itemsPerPage: 50, 'order[createdAt]': 'desc' },
+        },
+      })
+      return normalizeCollection(unwrap(result)).member.map(toEntry)
     },
   })
 

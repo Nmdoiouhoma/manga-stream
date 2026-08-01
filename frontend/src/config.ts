@@ -44,23 +44,32 @@ export const MERCURE_URL = (import.meta.env.VITE_MERCURE_URL ?? '').trim()
  * Topics the app subscribes to, comma-separated. Two placeholders are
  * substituted at runtime: `{userIri}` (e.g. `/api/users/1`) and `{userId}`.
  *
- * ⚠️ The backend has **not** frozen its publishing convention yet, so the
- * default below is a spread bet over the plausible ones:
- *   - `{origin}{userIri}`   → per-user channel, absolute IRI (Mercure's norm)
- *   - `{userIri}`           → same, relative, in case IRIs are published as-is
- *   - `{origin}/api/notifications/{id}` → API Platform's default per-resource
- *     topic, as an RFC 6570 template
+ * ── Every topic here MUST be user-scoped ──────────────────────────────────
+ * Phase 2 also subscribed to `{origin}/api/notifications/{id}` — API Platform's
+ * default per-resource topic, as an RFC 6570 template. That template matches
+ * **every** notification of **every** user, and the dev hub runs with the
+ * `anonymous` directive (see `docker-compose.yml`), so any browser subscribing
+ * to it received other people's notification events. The client-side owner
+ * filter in `useNotificationStream` limited the damage but did not prevent the
+ * payloads from reaching the tab. It has been **removed**, and nothing that is
+ * not scoped by `{userIri}`/`{userId}` may be added back.
  *
- * The last one is a catch-all and is **not user-scoped**: with the hub open to
- * anonymous subscribers it means we can receive other users' notification
- * events. Messages are filtered by user before being used (see
- * `useNotificationStream`), and this should be narrowed down as soon as the
- * backend states its convention. Override with `VITE_MERCURE_TOPICS`.
+ * ── The convention is still the backend's call ────────────────────────────
+ * As of 2026-08-02 the backend publishes **nothing**: `symfony/mercure-bundle`
+ * is not installed, no resource carries `mercure: true`, and no `HubInterface`
+ * is injected anywhere in `backend/src`. There is therefore no convention to
+ * adopt yet — verified by subscribing to `?topic=*` on the hub and triggering
+ * a notification/favourite/comment creation: the stream stayed empty.
+ *
+ * The defaults below are the two plausible **user-scoped** shapes (absolute,
+ * as Mercure recommends, and relative in case IRIs are published as-is). When
+ * the backend fixes its convention, set `VITE_MERCURE_TOPICS` to it — the whole
+ * thing is one env var, no code change.
  */
 const DEFAULT_MERCURE_TOPICS = [
   '{origin}{userIri}',
+  '{origin}{userIri}/notifications',
   '{userIri}',
-  '{origin}/api/notifications/{id}',
 ].join(',')
 
 const MERCURE_TOPIC_TEMPLATES = (
@@ -70,20 +79,42 @@ const MERCURE_TOPIC_TEMPLATES = (
   .map((topic) => topic.trim())
   .filter(Boolean)
 
-/** Expands the topic templates for one user. Returns `[]` when anonymous. */
+/**
+ * Expands the topic templates for one user. Returns `[]` when anonymous.
+ *
+ * **Enforced invariant**: a topic that does not mention the user is dropped,
+ * whatever `VITE_MERCURE_TOPICS` says. A template without `{userIri}` /
+ * `{userId}` — or one containing an RFC 6570 wildcard like `{id}` or `*` —
+ * would subscribe this browser to other accounts' events on a hub that accepts
+ * anonymous subscribers. The check is here rather than at parse time so a
+ * misconfiguration is caught in the deployed app, not only in review.
+ */
 export function mercureTopicsFor(userIri: string | null, userId: number | null): string[] {
   if (!userIri) return []
   // `API_BASE_URL` is '' when the API is same-origin.
   const origin = API_BASE_URL || window.location.origin
+  const scope = userId !== null ? String(userId) : ''
 
-  return [
-    ...new Set(
-      MERCURE_TOPIC_TEMPLATES.map((template) =>
-        template
-          .replaceAll('{origin}', origin)
-          .replaceAll('{userIri}', userIri)
-          .replaceAll('{userId}', userId !== null ? String(userId) : ''),
-      ).filter(Boolean),
-    ),
-  ]
+  const expanded = MERCURE_TOPIC_TEMPLATES.map((template) =>
+    template
+      .replaceAll('{origin}', origin)
+      .replaceAll('{userIri}', userIri)
+      .replaceAll('{userId}', scope),
+  ).filter(Boolean)
+
+  const scoped = expanded.filter((topic) => {
+    // Any placeholder left over is a wildcard as far as the hub is concerned.
+    if (topic.includes('*') || /\{[^}]*}/.test(topic)) return false
+    return topic.includes(userIri) || (scope !== '' && topic.includes(scope))
+  })
+
+  if (scoped.length !== expanded.length) {
+    console.warn(
+      '[mercure] Topic(s) non cloisonné(s) par utilisateur ignoré(s) — ils exposeraient les ' +
+        'événements des autres comptes sur un hub ouvert aux abonnés anonymes :',
+      expanded.filter((topic) => !scoped.includes(topic)),
+    )
+  }
+
+  return [...new Set(scoped)]
 }
