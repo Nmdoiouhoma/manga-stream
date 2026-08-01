@@ -58,9 +58,15 @@ class Comment implements OwnedByUser
     #[Groups(['comment:read'])]
     private ?int $id = null;
 
+    /**
+     * Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+     * imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+     * validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+     * de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+     * colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
+     */
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
-    #[Assert\NotNull]
     #[Groups(['comment:read', 'comment:write'])]
     private ?User $user = null;
 

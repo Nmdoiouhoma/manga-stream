@@ -174,7 +174,13 @@ final readonly class RecommendationEngine
             ->getQuery()
             ->getSingleScalarResult();
 
-        return null !== $lastFavorite && new \DateTimeImmutable((string) $lastFavorite) > $latest;
+        // Comparaison large (`>=`) et non stricte : Postgres stocke ces horodatages à
+        // la seconde. Un favori ajouté dans la même seconde que le dernier calcul
+        // porte exactement la même valeur et passerait pour antérieur — les
+        // recommandations resteraient muettes juste après l'action de l'utilisateur,
+        // le moment précis où il attend un effet. Le coût est un recalcul superflu
+        // pendant au plus une seconde, sur une opération idempotente.
+        return null !== $lastFavorite && new \DateTimeImmutable((string) $lastFavorite) >= $latest;
     }
 
     private function clear(User $user): void

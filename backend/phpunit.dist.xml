@@ -40,5 +40,10 @@
     </source>
 
     <extensions>
+        <!-- Isolation des tests : chaque test s'exécute dans une transaction
+             annulée à la fin. Le schéma n'est jamais recréé entre les tests, et
+             aucune donnée ne fuit d'un test à l'autre. La base `manga_stream_test`
+             doit exister et être migrée au préalable (la CI s'en charge). -->
+        <bootstrap class="DAMA\DoctrineTestBundle\PHPUnit\PHPUnitExtension"/>
     </extensions>
 </phpunit>

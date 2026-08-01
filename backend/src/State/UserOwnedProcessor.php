@@ -37,9 +37,13 @@ final readonly class UserOwnedProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): mixed
     {
-        if ($data instanceof OwnedByUser && $operation instanceof Post && !$operation instanceof DeleteOperationInterface) {
+        if ($data instanceof OwnedByUser && !$operation instanceof DeleteOperationInterface) {
             $user = $this->security->getUser();
-            if ($user instanceof User) {
+
+            // À la création, le propriétaire est TOUJOURS écrasé. En mise à jour, on ne
+            // le renseigne que s'il est absent : un PATCH envoyant `"user": null` ne
+            // doit pas violer la contrainte NOT NULL en base.
+            if ($user instanceof User && ($operation instanceof Post || null === $data->getUser())) {
                 $data->setUser($user);
             }
         }

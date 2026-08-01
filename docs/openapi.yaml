@@ -7473,7 +7473,6 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - content
     Comment-comment.read_comment.item.read:
       type: object
@@ -7509,14 +7508,10 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - content
     Comment-comment.write:
       type: object
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
-      required:
-        - user
-        - content
       properties:
         user:
           type: string
@@ -7543,6 +7538,8 @@ components:
           anyOf:
             - $ref: '#/components/schemas/Comment-comment.write'
             - type: 'null'
+      required:
+        - content
     Comment-comment.write.jsonMergePatch:
       type: object
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
@@ -7597,7 +7594,6 @@ components:
                 - $ref: '#/components/schemas/Manga.jsonld-comment.read'
                 - type: 'null'
           required:
-            - user
             - content
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
       properties:
@@ -7633,7 +7629,6 @@ components:
                 - $ref: '#/components/schemas/Manga.jsonld-comment.read_comment.item.read'
                 - type: 'null'
           required:
-            - user
             - content
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
       properties:
@@ -8219,8 +8214,6 @@ components:
         createdAt:
           type: string
           format: date-time
-      required:
-        - user
     Favorite-favorite.read_favorite.item.read:
       type: object
       description: "Favori d'un utilisateur, ciblant soit un anime, soit un manga."
@@ -8241,13 +8234,9 @@ components:
         createdAt:
           type: string
           format: date-time
-      required:
-        - user
     Favorite-favorite.write:
       type: object
       description: "Favori d'un utilisateur, ciblant soit un anime, soit un manga."
-      required:
-        - user
       properties:
         user:
           type: string
@@ -8307,8 +8296,6 @@ components:
             createdAt:
               type: string
               format: date-time
-          required:
-            - user
       description: "Favori d'un utilisateur, ciblant soit un anime, soit un manga."
     Favorite.jsonld-favorite.read_favorite.item.read:
       allOf:
@@ -8332,8 +8319,6 @@ components:
             createdAt:
               type: string
               format: date-time
-          required:
-            - user
       description: "Favori d'un utilisateur, ciblant soit un anime, soit un manga."
     Genre-anime.read:
       type: object
@@ -9761,7 +9746,6 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - type
     Notification-notification.read_notification.item.read:
       type: object
@@ -9794,14 +9778,10 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - type
     Notification-notification.write:
       type: object
       description: 'Notification utilisateur.'
-      required:
-        - user
-        - type
       properties:
         user:
           type: string
@@ -9825,6 +9805,8 @@ components:
         isRead:
           default: false
           type: boolean
+      required:
+        - type
     Notification-notification.write.jsonMergePatch:
       type: object
       description: 'Notification utilisateur.'
@@ -9884,7 +9866,6 @@ components:
               type: string
               format: date-time
           required:
-            - user
             - type
       description: 'Notification utilisateur.'
     Notification.jsonld-notification.read_notification.item.read:
@@ -9920,7 +9901,6 @@ components:
               type: string
               format: date-time
           required:
-            - user
             - type
       description: 'Notification utilisateur.'
     Progress-progress.read:
@@ -9970,7 +9950,6 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - status
     Progress-progress.read_progress.item.read:
       type: object
@@ -10019,14 +9998,10 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - status
     Progress-progress.write:
       type: object
       description: "Suivi de visionnage/lecture d'un utilisateur."
-      required:
-        - user
-        - status
       properties:
         user:
           type: string
@@ -10070,6 +10045,8 @@ components:
           type:
             - integer
             - 'null'
+      required:
+        - status
     Progress-progress.write.jsonMergePatch:
       type: object
       description: "Suivi de visionnage/lecture d'un utilisateur."
@@ -10165,7 +10142,6 @@ components:
               type: string
               format: date-time
           required:
-            - user
             - status
       description: "Suivi de visionnage/lecture d'un utilisateur."
     Progress.jsonld-progress.read_progress.item.read:
@@ -10217,12 +10193,11 @@ components:
               type: string
               format: date-time
           required:
-            - user
             - status
       description: "Suivi de visionnage/lecture d'un utilisateur."
     Recommendation-recommendation.read:
       type: object
-      description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
+      description: "Recommandations de l'utilisateur courant, recalculées si elles sont périmées."
       properties:
         id:
           readOnly: true
@@ -10256,7 +10231,6 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - score
     Recommendation-recommendation.read_recommendation.item.read:
       type: object
@@ -10294,14 +10268,10 @@ components:
           type: string
           format: date-time
       required:
-        - user
         - score
     Recommendation-recommendation.write:
       type: object
       description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
-      required:
-        - user
-        - score
       properties:
         user:
           type: string
@@ -10334,6 +10304,8 @@ components:
             type:
               - string
               - 'null'
+      required:
+        - score
     Recommendation-recommendation.write.jsonMergePatch:
       type: object
       description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
@@ -10407,9 +10379,8 @@ components:
               type: string
               format: date-time
           required:
-            - user
             - score
-      description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
+      description: "Recommandations de l'utilisateur courant, recalculées si elles sont périmées."
     Recommendation.jsonld-recommendation.read_recommendation.item.read:
       allOf:
         - $ref: '#/components/schemas/HydraItemBaseSchema'
@@ -10448,7 +10419,6 @@ components:
               type: string
               format: date-time
           required:
-            - user
             - score
       description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
     User-comment.read:
