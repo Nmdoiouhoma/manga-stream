@@ -1,12 +1,13 @@
 /**
- * React Query hooks over the typed API client.
+ * React Query hooks over the typed API client — catalogue and detail pages.
  *
  * Query parameters below are NOT invented: every one of them is declared in
- * `docs/openapi.yaml` for the corresponding operation.
- *   - `titleRomaji`      → partial, case-insensitive SearchFilter
- *   - `genres.slug[]`    → exact match on the related genre slug, repeatable
- *   - `status[]`         → exact match on the status enum, repeatable
- *   - `season`           → anime only (mangas have no season filter)
+ * `docs/openapi.yaml` for the corresponding operation, with the single
+ * documented exception of `title` (see `SearchQuery` below).
+ *   - `title`               → combined OR search on the three title columns
+ *   - `genres.slug[]`       → exact match on the related genre slug, repeatable
+ *   - `status[]`            → exact match on the status enum, repeatable
+ *   - `season`              → anime only (mangas have no season filter)
  *   - `page`/`itemsPerPage` → pagination (default 30, max 100)
  *
  * The catalogue can browse animes and mangas at the same time ("Tout"), but the
@@ -18,18 +19,23 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { apiClient, unwrap } from './client'
 import { normalizeCollection } from './hydra'
 import { ITEMS_PER_PAGE } from '../config'
+import type { paths } from './schema'
 import {
+  animeToMediaDetail,
   animeToMediaItem,
+  mangaToMediaDetail,
   mangaToMediaItem,
   type Genre,
+  type MediaDetail,
   type MediaItem,
+  type MediaKind,
   type MediaKindFilter,
   type MediaSeason,
   type MediaStatus,
 } from '../types/media'
 
 export type CatalogFilters = {
-  /** Free-text search. Applied to `titleRomaji` — see the note in `filterParams`. */
+  /** Free-text search, applied to the combined `title` filter. */
   search: string
   /** Selected genre slugs. API Platform ORs repeated values of the same filter. */
   genres: string[]
@@ -46,6 +52,27 @@ export const DEFAULT_FILTERS: CatalogFilters = {
   kind: 'all',
 }
 
+type AnimeQuery = NonNullable<paths['/api/animes']['get']['parameters']['query']>
+type MangaQuery = NonNullable<paths['/api/mangas']['get']['parameters']['query']>
+
+/**
+ * ⚠️ The one place where we knowingly go beyond the generated types.
+ *
+ * The backend ships a custom `?title=` filter that ORs `titleRomaji`,
+ * `titleEnglish` and `titleNative` — verified live against
+ * `http://localhost:8000` (it appears in the Hydra `IriTemplate` of
+ * `/api/animes`). But `docs/openapi.yaml` has not been regenerated yet, so
+ * `src/api/schema.ts` still only knows the three independent SearchFilters,
+ * which API Platform ANDs together and which therefore cannot express the OR
+ * we want.
+ *
+ * Rather than search `titleRomaji` alone and miss every English-only match, we
+ * widen the query type by exactly one optional key and narrow it back with a
+ * single cast per call site. The day `docs/openapi.yaml` gains `title`,
+ * `npm run generate:api` makes this alias redundant and nothing else moves.
+ */
+type SearchQuery<Q> = Q & { title?: string }
+
 /** One cursor per collection; `null` means "exhausted, or excluded by the type filter". */
 type CatalogCursor = { anime: number | null; manga: number | null }
 
@@ -56,42 +83,33 @@ type CatalogPage = {
   next: CatalogCursor | null
 }
 
-/**
- * Query params shared by the anime and manga collections.
- *
- * ⚠️ Contract limitation: there is no combined `title` filter. The API exposes
- * `titleRomaji`, `titleEnglish` and `titleNative` as three independent
- * SearchFilters, and API Platform ANDs different filters together — so we
- * cannot express "romaji OR english" in one request. We search `titleRomaji`,
- * the only title the contract marks as required. Asking the backend for a
- * combined title search is tracked as a phase-2 item.
- */
+/** Query params shared by the anime and manga collections. */
 function filterParams(filters: CatalogFilters) {
   return {
     itemsPerPage: ITEMS_PER_PAGE,
-    ...(filters.search ? { titleRomaji: filters.search } : {}),
+    ...(filters.search ? { title: filters.search } : {}),
     ...(filters.genres.length > 0 ? { 'genres.slug[]': filters.genres } : {}),
     ...(filters.status !== 'all' ? { 'status[]': [filters.status] } : {}),
   }
 }
 
 async function fetchAnimePage(filters: CatalogFilters, page: number) {
+  const query: SearchQuery<AnimeQuery> = {
+    ...filterParams(filters),
+    page,
+    // `season` exists on the anime collection only.
+    ...(filters.season !== 'all' ? { season: filters.season } : {}),
+  }
   const result = await apiClient.GET('/api/animes', {
-    params: {
-      query: {
-        ...filterParams(filters),
-        page,
-        // `season` exists on the anime collection only.
-        ...(filters.season !== 'all' ? { season: filters.season } : {}),
-      },
-    },
+    params: { query: query as AnimeQuery },
   })
   return normalizeCollection(unwrap(result))
 }
 
 async function fetchMangaPage(filters: CatalogFilters, page: number) {
+  const query: SearchQuery<MangaQuery> = { ...filterParams(filters), page }
   const result = await apiClient.GET('/api/mangas', {
-    params: { query: { ...filterParams(filters), page } },
+    params: { query: query as MangaQuery },
   })
   return normalizeCollection(unwrap(result))
 }
@@ -160,5 +178,38 @@ export function useGenres() {
       return normalizeCollection(unwrap(result)).member
     },
     staleTime: Infinity,
+  })
+}
+
+/* ────────────────────────────── Detail pages ────────────────────────────── */
+
+/**
+ * One media item, from whichever collection it belongs to.
+ *
+ * The item endpoint serves the `*.item.read` group, which embeds `episodes[]`
+ * (anime) or `chapters[]` (manga) — no second request needed for the listing.
+ *
+ * `retry: false` matters here: a 404 is a legitimate answer for a bad id, and
+ * retrying it only delays the "not found" screen.
+ */
+export function useMediaDetail(kind: MediaKind, id: string | undefined) {
+  return useQuery<MediaDetail>({
+    queryKey: ['media', kind, id],
+    enabled: Boolean(id),
+    retry: false,
+    queryFn: async () => {
+      // The cast is safe: `enabled` keeps the query from running without an id.
+      const identifier = id as string
+      if (kind === 'anime') {
+        const result = await apiClient.GET('/api/animes/{id}', {
+          params: { path: { id: identifier } },
+        })
+        return animeToMediaDetail(unwrap(result))
+      }
+      const result = await apiClient.GET('/api/mangas/{id}', {
+        params: { path: { id: identifier } },
+      })
+      return mangaToMediaDetail(unwrap(result))
+    },
   })
 }

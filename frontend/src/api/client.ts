@@ -17,6 +17,7 @@
 import createClient, { type Middleware } from 'openapi-fetch'
 import type { paths } from './schema'
 import { API_BASE_URL } from '../config'
+import { getSession, isTokenExpired, notifyUnauthorized, setSession } from '../auth/session'
 
 /** The single media type this app speaks. Keep the header and the generic in sync. */
 export const MEDIA_TYPE = 'application/ld+json'
@@ -27,20 +28,46 @@ export const apiClient = createClient<paths, typeof MEDIA_TYPE>({
 })
 
 /**
- * Auth injection point (phase 2).
+ * Auth middleware — the single place where the JWT enters the request, and the
+ * single place where a 401 is turned into a logout. No call site knows about
+ * authentication.
  *
- * Phase 1 endpoints are all public — the contract declares no `securitySchemes`
- * yet. When JWT lands, the only change needed is to read the token here and set
- * the header; every call site stays untouched.
+ * Two guards keep the "expired token" path from looping:
+ *
+ *  1. `onRequest` refuses to send an already-expired token: it clears the
+ *     session locally instead. So we do not even generate the 401.
+ *  2. `onResponse` only reacts when the request actually carried a token, and
+ *     `notifyUnauthorized()` is itself idempotent (it no-ops once the session
+ *     is gone). A burst of parallel 401s therefore triggers exactly one logout.
+ *
+ * The login/register calls do NOT go through this client (see `api/auth.ts`),
+ * so a wrong password can never be mistaken for an expired session.
  */
 const authMiddleware: Middleware = {
   onRequest({ request }) {
-    // eslint-disable-next-line no-constant-condition
-    const token: string | null = null // ← phase 2: read from the auth store
-    if (token) {
-      request.headers.set('Authorization', `Bearer ${token}`)
+    const session = getSession()
+    if (!session) return request
+
+    if (isTokenExpired(session.token)) {
+      // Guard 1: locally expired. Drop it silently; the caller will simply get
+      // the anonymous response. `setSession` (not `notifyUnauthorized`) because
+      // this is not a server rejection and needs no redirect of its own —
+      // `AuthProvider` re-renders and the protected routes bounce naturally.
+      setSession(null)
+      return request
     }
+
+    request.headers.set('Authorization', `Bearer ${session.token}`)
     return request
+  },
+
+  onResponse({ request, response }) {
+    // Guard 2: only an *authenticated* request that got rejected means the
+    // token died. A 401 on an anonymous request is just a protected endpoint.
+    if (response.status === 401 && request.headers.has('Authorization')) {
+      notifyUnauthorized()
+    }
+    return response
   },
 }
 
