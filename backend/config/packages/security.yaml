@@ -15,22 +15,44 @@ security:
             # Ensure dev tools and static assets are always allowed
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
+
+        # POST /api/login : échange e-mail + mot de passe contre un JWT.
+        login:
+            pattern: ^/api/login$
+            stateless: true
+            provider: app_user_provider
+            json_login:
+                check_path: /api/login
+                username_path: email
+                password_path: password
+                success_handler: lexik_jwt_authentication.handler.authentication_success
+                failure_handler: lexik_jwt_authentication.handler.authentication_failure
+
+        # POST /api/register : création de compte, nécessairement ouverte.
+        register:
+            pattern: ^/api/register$
+            stateless: true
+            security: false
+
+        # Le reste de l'API. Le firewall n'impose délibérément AUCUNE authentification
+        # globale : la lecture du catalogue doit rester publique. C'est l'attribut
+        # `security` de chaque opération API Platform qui exige un rôle ; ce firewall se
+        # contente de valider le jeton lorsqu'il est présenté, et de renvoyer un 401
+        # (et non un 403) quand une opération protégée est appelée sans jeton.
+        api:
+            pattern: ^/api
+            stateless: true
+            provider: app_user_provider
+            entry_point: jwt
+            jwt: ~
+
         main:
             lazy: true
             provider: app_user_provider
-            # PHASE 2 : brancher ici l'authenticator JWT (LexikJWTAuthenticationBundle)
-            # et un firewall dédié ^/api/auth pour le login.
 
-            # Activate different ways to authenticate:
-            # https://symfony.com/doc/current/security.html#the-firewall
-
-            # https://symfony.com/doc/current/security/impersonating_user.html
-            # switch_user: true
-
-    # Note: Only the *first* matching rule is applied
-    access_control:
-        # - { path: ^/admin, roles: ROLE_ADMIN }
-        # - { path: ^/profile, roles: ROLE_USER }
+    # Aucune règle globale : le contrôle d'accès est porté par les opérations
+    # API Platform, au plus près des ressources.
+    access_control: []
 
 when@test:
     security:

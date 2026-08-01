@@ -218,6 +218,17 @@ paths:
           style: form
           explode: true
         -
+          name: title
+          in: query
+          description: 'Recherche partielle insensible à la casse sur les titres romaji, anglais et natif, combinés en OU.'
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+          example: 'attack on titan'
+        -
           name: 'averageScore[between]'
           in: query
           description: ''
@@ -498,6 +509,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Anime resource.'
       description: 'Creates a Anime resource.'
       parameters: []
@@ -593,6 +617,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -636,6 +673,19 @@ paths:
       responses:
         '204':
           description: 'Anime resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -702,6 +752,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           links: {}
         '404':
           description: 'Not found'
@@ -1007,6 +1070,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Chapter resource.'
       description: 'Creates a Chapter resource.'
       parameters: []
@@ -1102,6 +1178,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -1145,6 +1234,19 @@ paths:
       responses:
         '204':
           description: 'Chapter resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -1211,6 +1313,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           links: {}
         '404':
           description: 'Not found'
@@ -1476,6 +1591,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Comment resource.'
       description: 'Creates a Comment resource.'
       parameters: []
@@ -1537,6 +1665,19 @@ paths:
       responses:
         '204':
           description: 'Comment resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -1603,6 +1744,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           links: {}
         '404':
           description: 'Not found'
@@ -1908,6 +2062,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Episode resource.'
       description: 'Creates a Episode resource.'
       parameters: []
@@ -2003,6 +2170,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2046,6 +2226,19 @@ paths:
       responses:
         '204':
           description: 'Episode resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2113,6 +2306,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2167,6 +2373,19 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Favorite-favorite.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Retrieves the collection of Favorite resources.'
       description: 'Retrieves the collection of Favorite resources.'
       parameters:
@@ -2335,6 +2554,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Favorite resource.'
       description: 'Creates a Favorite resource.'
       parameters: []
@@ -2363,6 +2595,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Favorite-favorite.read_favorite.item.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2396,6 +2641,19 @@ paths:
       responses:
         '204':
           description: 'Favorite resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2462,6 +2720,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           links: {}
         '404':
           description: 'Not found'
@@ -2645,6 +2916,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Genre resource.'
       description: 'Creates a Genre resource.'
       parameters: []
@@ -2740,6 +3024,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2783,6 +3080,19 @@ paths:
       responses:
         '204':
           description: 'Genre resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2850,6 +3160,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -2882,6 +3205,41 @@ paths:
           application/merge-patch+json:
             schema:
               $ref: '#/components/schemas/Genre-genre.write.jsonMergePatch'
+        required: true
+  /api/login:
+    post:
+      operationId: login_check_post
+      tags:
+        - 'Login Check'
+      responses:
+        '200':
+          description: 'User token created'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { readOnly: true, type: string, nullable: false }
+                required:
+                  - token
+      summary: 'Creates a user token.'
+      description: 'Creates a user token.'
+      requestBody:
+        description: 'The login data'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  nullable: false
+                password:
+                  type: string
+                  nullable: false
+              required:
+                - email
+                - password
         required: true
   /api/mangas:
     get:
@@ -3049,6 +3407,17 @@ paths:
               type: string
           style: form
           explode: true
+        -
+          name: title
+          in: query
+          description: 'Recherche partielle insensible à la casse sur les titres romaji, anglais et natif, combinés en OU.'
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+          example: 'attack on titan'
         -
           name: 'averageScore[between]'
           in: query
@@ -3316,6 +3685,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Manga resource.'
       description: 'Creates a Manga resource.'
       parameters: []
@@ -3411,6 +3793,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -3454,6 +3849,19 @@ paths:
       responses:
         '204':
           description: 'Manga resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -3521,6 +3929,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -3575,6 +3996,19 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Notification-notification.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Retrieves the collection of Notification resources.'
       description: 'Retrieves the collection of Notification resources.'
       parameters:
@@ -3711,6 +4145,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Notification resource.'
       description: 'Creates a Notification resource.'
       parameters: []
@@ -3739,6 +4186,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Notification-notification.read_notification.item.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -3772,6 +4232,19 @@ paths:
       responses:
         '204':
           description: 'Notification resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -3839,6 +4312,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -3893,6 +4379,19 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Progress-progress.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Retrieves the collection of Progress resources.'
       description: 'Retrieves the collection of Progress resources.'
       parameters:
@@ -4207,6 +4706,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Progress resource.'
       description: 'Creates a Progress resource.'
       parameters: []
@@ -4235,6 +4747,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Progress-progress.read_progress.item.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -4302,6 +4827,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -4345,6 +4883,19 @@ paths:
       responses:
         '204':
           description: 'Progress resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -4412,6 +4963,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -4466,6 +5030,19 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Recommendation-recommendation.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Retrieves the collection of Recommendation resources.'
       description: 'Retrieves the collection of Recommendation resources.'
       parameters:
@@ -4698,6 +5275,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Creates a Recommendation resource.'
       description: 'Creates a Recommendation resource.'
       parameters: []
@@ -4726,6 +5316,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Recommendation-recommendation.read_recommendation.item.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -4759,6 +5362,19 @@ paths:
       responses:
         '204':
           description: 'Recommendation resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -4826,6 +5442,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -4859,6 +5488,105 @@ paths:
             schema:
               $ref: '#/components/schemas/Recommendation-recommendation.write.jsonMergePatch'
         required: true
+  /api/me:
+    get:
+      operationId: api_me_get
+      tags:
+        - User
+      responses:
+        '200':
+          description: 'User resource'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/User.jsonld-user.read_user.item.read'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User-user.read_user.item.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
+        '404':
+          description: 'Not found'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
+      summary: "Profil de l'utilisateur authentifié."
+      description: "Profil de l'utilisateur authentifié."
+      parameters: []
+  /api/register:
+    post:
+      operationId: api_register_post
+      tags:
+        - User
+      responses:
+        '201':
+          description: 'User resource created'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/User.jsonld-user.read'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User-user.read'
+          links: {}
+        '400':
+          description: 'Invalid input'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
+        '422':
+          description: 'An error occurred'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+      summary: 'Creates a User resource.'
+      description: 'Creates a User resource.'
+      parameters: []
+      requestBody:
+        description: 'The new User resource'
+        content:
+          application/ld+json:
+            schema:
+              $ref: '#/components/schemas/User-user.write'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User-user.write'
+        required: true
   /api/users:
     get:
       operationId: api_users_get_collection
@@ -4880,6 +5608,19 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/User-user.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
       summary: 'Retrieves the collection of User resources.'
       description: 'Retrieves the collection of User resources.'
       parameters:
@@ -5021,6 +5762,7 @@ paths:
             schema:
               $ref: '#/components/schemas/User-user.write'
         required: true
+      deprecated: true
   '/api/users/{id}':
     get:
       operationId: api_users_id_get
@@ -5036,6 +5778,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User-user.read_user.item.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -5103,6 +5858,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
           links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -5146,6 +5914,19 @@ paths:
       responses:
         '204':
           description: 'User resource deleted'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
         '404':
           description: 'Not found'
           content:
@@ -5212,6 +5993,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           links: {}
         '404':
           description: 'Not found'
@@ -8079,6 +8873,17 @@ components:
             - CANCELLED
             - HIATUS
             - null
+        startDate:
+          description: 'Début de publication (renseigné par la synchronisation AniList).'
+          type:
+            - string
+            - 'null'
+          format: date-time
+        endDate:
+          type:
+            - string
+            - 'null'
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -8166,6 +8971,17 @@ components:
             - CANCELLED
             - HIATUS
             - null
+        startDate:
+          description: 'Début de publication (renseigné par la synchronisation AniList).'
+          type:
+            - string
+            - 'null'
+          format: date-time
+        endDate:
+          type:
+            - string
+            - 'null'
+          format: date-time
         createdAt:
           type: string
           format: date-time
@@ -8254,6 +9070,17 @@ components:
             - CANCELLED
             - HIATUS
             - null
+        startDate:
+          description: 'Début de publication (renseigné par la synchronisation AniList).'
+          type:
+            - string
+            - 'null'
+          format: date-time
+        endDate:
+          type:
+            - string
+            - 'null'
+          format: date-time
         genres:
           type: array
           items:
@@ -8334,6 +9161,17 @@ components:
             - CANCELLED
             - HIATUS
             - null
+        startDate:
+          description: 'Début de publication (renseigné par la synchronisation AniList).'
+          type:
+            - string
+            - 'null'
+          format: date-time
+        endDate:
+          type:
+            - string
+            - 'null'
+          format: date-time
         genres:
           type: array
           items:
@@ -8637,6 +9475,17 @@ components:
                 - CANCELLED
                 - HIATUS
                 - null
+            startDate:
+              description: 'Début de publication (renseigné par la synchronisation AniList).'
+              type:
+                - string
+                - 'null'
+              format: date-time
+            endDate:
+              type:
+                - string
+                - 'null'
+              format: date-time
             createdAt:
               type: string
               format: date-time
@@ -8727,6 +9576,17 @@ components:
                 - CANCELLED
                 - HIATUS
                 - null
+            startDate:
+              description: 'Début de publication (renseigné par la synchronisation AniList).'
+              type:
+                - string
+                - 'null'
+              format: date-time
+            endDate:
+              type:
+                - string
+                - 'null'
+              format: date-time
             createdAt:
               type: string
               format: date-time
@@ -9727,6 +10587,10 @@ components:
           default: ''
           type: string
         roles:
+          description: |-
+            Rôles additionnels. Volontairement absent du groupe `user:write` : les rôles ne
+            sont pas attribuables via l'API, sans quoi n'importe qui s'inscrirait
+            administrateur. La promotion se fait en console (`app:user:create --admin`).
           type: array
           items:
             type: string
@@ -9756,6 +10620,10 @@ components:
           default: ''
           type: string
         roles:
+          description: |-
+            Rôles additionnels. Volontairement absent du groupe `user:write` : les rôles ne
+            sont pas attribuables via l'API, sans quoi n'importe qui s'inscrirait
+            administrateur. La promotion se fait en console (`app:user:create --admin`).
           type: array
           items:
             type: string
@@ -9767,10 +10635,11 @@ components:
         - username
     User-user.write:
       type: object
-      description: 'Compte utilisateur.'
+      description: 'Crée un compte. Le mot de passe est haché côté serveur.'
       required:
         - email
         - username
+        - plainPassword
       properties:
         email:
           format: email
@@ -9784,10 +10653,6 @@ components:
           maxLength: 50
           default: ''
           type: string
-        roles:
-          type: array
-          items:
-            type: string
         plainPassword:
           minLength: 8
           maxLength: 4096
@@ -9811,10 +10676,6 @@ components:
           maxLength: 50
           default: ''
           type: string
-        roles:
-          type: array
-          items:
-            type: string
         plainPassword:
           minLength: 8
           maxLength: 4096
@@ -10000,6 +10861,10 @@ components:
               default: ''
               type: string
             roles:
+              description: |-
+                Rôles additionnels. Volontairement absent du groupe `user:write` : les rôles ne
+                sont pas attribuables via l'API, sans quoi n'importe qui s'inscrirait
+                administrateur. La promotion se fait en console (`app:user:create --admin`).
               type: array
               items:
                 type: string
@@ -10032,6 +10897,10 @@ components:
               default: ''
               type: string
             roles:
+              description: |-
+                Rôles additionnels. Volontairement absent du groupe `user:write` : les rôles ne
+                sont pas attribuables via l'API, sans quoi n'importe qui s'inscrirait
+                administrateur. La promotion se fait en console (`app:user:create --admin`).
               type: array
               items:
                 type: string
@@ -10047,8 +10916,14 @@ components:
   examples: {}
   requestBodies: {}
   headers: {}
-  securitySchemes: {}
-security: []
+  securitySchemes:
+    JWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  -
+    JWT: []
 tags:
   - name: Anime
     description: 'Série animée du catalogue.'

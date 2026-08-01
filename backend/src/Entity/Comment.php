@@ -36,9 +36,12 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new GetCollection(),
         new Get(normalizationContext: ['groups' => ['comment:read', 'comment:item:read']]),
-        new Post(),
-        new Patch(),
-        new Delete(),
+        new Post(security: "is_granted('ROLE_USER')"),
+        new Patch(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Seul l\'auteur peut modifier son commentaire.'),
+        new Delete(
+            security: "is_granted('ROLE_ADMIN') or (is_granted('ROLE_USER') and object.getUser() === user)",
+            securityMessage: 'Seuls l\'auteur et un administrateur peuvent supprimer ce commentaire.',
+        ),
     ],
     normalizationContext: ['groups' => ['comment:read']],
     denormalizationContext: ['groups' => ['comment:write']],
@@ -47,7 +50,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: ['user' => 'exact', 'anime' => 'exact', 'manga' => 'exact', 'parent' => 'exact', 'content' => 'ipartial'])]
 #[ApiFilter(ExistsFilter::class, properties: ['parent', 'anime', 'manga'])]
 #[ApiFilter(OrderFilter::class, properties: ['createdAt'])]
-class Comment
+class Comment implements OwnedByUser
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

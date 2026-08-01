@@ -32,11 +32,14 @@ use Symfony\Component\Validator\Constraints as Assert;
     shortName: 'Favorite',
     description: 'Favori d\'un utilisateur, ciblant soit un anime, soit un manga.',
     operations: [
-        new GetCollection(),
-        new Get(normalizationContext: ['groups' => ['favorite:read', 'favorite:item:read']]),
-        new Post(),
-        new Patch(),
-        new Delete(),
+        new GetCollection(security: "is_granted('ROLE_USER')"),
+        new Get(
+            normalizationContext: ['groups' => ['favorite:read', 'favorite:item:read']],
+            security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.',
+        ),
+        new Post(security: "is_granted('ROLE_USER')"),
+        new Patch(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
+        new Delete(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
     ],
     normalizationContext: ['groups' => ['favorite:read']],
     denormalizationContext: ['groups' => ['favorite:write']],
@@ -45,7 +48,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: ['user' => 'exact', 'anime' => 'exact', 'manga' => 'exact'])]
 #[ApiFilter(ExistsFilter::class, properties: ['anime', 'manga'])]
 #[ApiFilter(OrderFilter::class, properties: ['createdAt'])]
-class Favorite
+class Favorite implements OwnedByUser
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

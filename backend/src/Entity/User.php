@@ -15,8 +15,12 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use ApiPlatform\OpenApi\Model;
 use App\Repository\UserRepository;
+use App\State\MeProvider;
+use App\State\UserPasswordHasherProcessor;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Serializer\Attribute\Groups;
@@ -25,25 +29,65 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * Utilisateur de la plateforme.
  *
- * Implémente déjà UserInterface / PasswordAuthenticatedUserInterface pour préparer
- * l'authentification JWT (phase 2). En phase 1 aucun firewall n'est actif et le
- * hachage du mot de passe n'est pas encore branché : `plainPassword` est exposé en
- * écriture seule, `password` n'est jamais sérialisé.
+ * L'inscription se fait par `POST /api/register` : le mot de passe en clair est haché
+ * par {@see UserPasswordHasherProcessor}, `password` n'est jamais sérialisé et les
+ * rôles ne sont pas attribuables depuis la requête.
+ *
+ * Le listing complet est réservé aux administrateurs (il exposerait tous les e-mails) ;
+ * un utilisateur connecté récupère sa propre ressource via `GET /api/me`.
  */
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: '"user"')]
 #[ORM\UniqueConstraint(name: 'uniq_user_email', columns: ['email'])]
 #[ORM\UniqueConstraint(name: 'uniq_user_username', columns: ['username'])]
+#[UniqueEntity(fields: ['email'], message: 'Un compte existe déjà avec cette adresse e-mail.')]
+#[UniqueEntity(fields: ['username'], message: 'Ce nom d\'utilisateur est déjà pris.')]
 #[ApiResource(
     shortName: 'User',
     description: 'Compte utilisateur.',
     operations: [
-        new GetCollection(),
-        new Get(normalizationContext: ['groups' => ['user:read', 'user:item:read']]),
-        new Post(),
-        new Put(),
-        new Patch(),
-        new Delete(),
+        new GetCollection(
+            security: "is_granted('ROLE_ADMIN')",
+            securityMessage: 'Le listing des comptes est réservé aux administrateurs.',
+        ),
+        new Get(
+            normalizationContext: ['groups' => ['user:read', 'user:item:read']],
+            security: "is_granted('ROLE_ADMIN') or object === user",
+        ),
+        // Profil courant. Déclaré avant les autres routes item pour que `/api/me`
+        // ne soit pas capté par le motif `/api/users/{id}`.
+        new Get(
+            uriTemplate: '/me',
+            normalizationContext: ['groups' => ['user:read', 'user:item:read']],
+            security: "is_granted('ROLE_USER')",
+            provider: MeProvider::class,
+            read: true,
+            description: 'Retourne le compte associé au jeton présenté.',
+            openapi: new Model\Operation(summary: 'Profil de l\'utilisateur authentifié.'),
+        ),
+        // Inscription publique.
+        new Post(
+            uriTemplate: '/register',
+            validationContext: ['groups' => ['Default', 'user:register']],
+            processor: UserPasswordHasherProcessor::class,
+            description: 'Crée un compte. Le mot de passe est haché côté serveur.',
+        ),
+        // Alias historique de l'inscription, conservé pour ne pas casser le client
+        // existant. À supprimer une fois le frontend basculé sur /api/register.
+        new Post(
+            validationContext: ['groups' => ['Default', 'user:register']],
+            processor: UserPasswordHasherProcessor::class,
+            deprecationReason: 'Utiliser POST /api/register.',
+        ),
+        new Put(
+            security: "is_granted('ROLE_ADMIN') or object === user",
+            processor: UserPasswordHasherProcessor::class,
+        ),
+        new Patch(
+            security: "is_granted('ROLE_ADMIN') or object === user",
+            processor: UserPasswordHasherProcessor::class,
+        ),
+        new Delete(security: "is_granted('ROLE_ADMIN') or object === user"),
     ],
     normalizationContext: ['groups' => ['user:read']],
     denormalizationContext: ['groups' => ['user:write']],
@@ -73,10 +117,14 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     private string $username = '';
 
     /**
+     * Rôles additionnels. Volontairement absent du groupe `user:write` : les rôles ne
+     * sont pas attribuables via l'API, sans quoi n'importe qui s'inscrirait
+     * administrateur. La promotion se fait en console (`app:user:create --admin`).
+     *
      * @var list<string>
      */
     #[ORM\Column(type: 'json')]
-    #[Groups(['user:read', 'user:write'])]
+    #[Groups(['user:read'])]
     private array $roles = [];
 
     /**
@@ -87,8 +135,11 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     private string $password = '';
 
     /**
-     * Mot de passe en clair, non persisté. Sera haché par un State Processor en phase 2.
+     * Mot de passe en clair, non persisté : haché par {@see UserPasswordHasherProcessor}
+     * puis effacé. Obligatoire à l'inscription, facultatif sur une mise à jour
+     * (un PATCH qui ne le fournit pas laisse le mot de passe inchangé).
      */
+    #[Assert\NotBlank(groups: ['user:register'])]
     #[Assert\Length(min: 8, max: 4096)]
     #[ApiProperty(description: 'Mot de passe en clair (écriture seule).')]
     #[Groups(['user:write'])]

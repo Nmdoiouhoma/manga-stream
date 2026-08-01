@@ -9,3 +9,10 @@
 
 controllers:
     resource: routing.controllers
+
+# Point d'entrée de l'authentification. La requête n'atteint jamais de contrôleur :
+# elle est interceptée par le firewall `login` (json_login) qui renvoie le JWT.
+# La route existe uniquement pour que l'URL soit routable.
+api_login:
+    path: /api/login
+    methods: [POST]

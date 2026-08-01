@@ -35,11 +35,14 @@ use Symfony\Component\Validator\Constraints as Assert;
     shortName: 'Recommendation',
     description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.',
     operations: [
-        new GetCollection(),
-        new Get(normalizationContext: ['groups' => ['recommendation:read', 'recommendation:item:read']]),
-        new Post(),
-        new Patch(),
-        new Delete(),
+        new GetCollection(security: "is_granted('ROLE_USER')"),
+        new Get(
+            normalizationContext: ['groups' => ['recommendation:read', 'recommendation:item:read']],
+            security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.',
+        ),
+        new Post(security: "is_granted('ROLE_USER')"),
+        new Patch(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
+        new Delete(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
     ],
     normalizationContext: ['groups' => ['recommendation:read']],
     denormalizationContext: ['groups' => ['recommendation:write']],
@@ -49,7 +52,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(ExistsFilter::class, properties: ['anime', 'manga'])]
 #[ApiFilter(RangeFilter::class, properties: ['score'])]
 #[ApiFilter(OrderFilter::class, properties: ['score', 'generatedAt'])]
-class Recommendation
+class Recommendation implements OwnedByUser
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

@@ -33,11 +33,14 @@ use Symfony\Component\Validator\Constraints as Assert;
     shortName: 'Notification',
     description: 'Notification utilisateur.',
     operations: [
-        new GetCollection(),
-        new Get(normalizationContext: ['groups' => ['notification:read', 'notification:item:read']]),
-        new Post(),
-        new Patch(),
-        new Delete(),
+        new GetCollection(security: "is_granted('ROLE_USER')"),
+        new Get(
+            normalizationContext: ['groups' => ['notification:read', 'notification:item:read']],
+            security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.',
+        ),
+        new Post(security: "is_granted('ROLE_USER')"),
+        new Patch(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
+        new Delete(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
     ],
     normalizationContext: ['groups' => ['notification:read']],
     denormalizationContext: ['groups' => ['notification:write']],
@@ -46,7 +49,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: ['user' => 'exact', 'type' => 'exact'])]
 #[ApiFilter(BooleanFilter::class, properties: ['isRead'])]
 #[ApiFilter(OrderFilter::class, properties: ['createdAt'])]
-class Notification
+class Notification implements OwnedByUser
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]

@@ -2,3 +2,11 @@ lexik_jwt_authentication:
     secret_key: '%env(resolve:JWT_SECRET_KEY)%'
     public_key: '%env(resolve:JWT_PUBLIC_KEY)%'
     pass_phrase: '%env(JWT_PASSPHRASE)%'
+    # Claim portant l'identité. Par défaut Lexik utilise `username`, qu'il lit via
+    # PropertyAccess : il écrivait donc le pseudo (`getUsername()`) dans le jeton,
+    # alors que `app_user_provider` recherche les comptes par e-mail — tout jeton
+    # pourtant valide était rejeté en « Invalid credentials ».
+    user_id_claim: email
+    # Durée de vie du jeton (1 h par défaut). Le frontend décode l'`exp` du JWT
+    # pour anticiper l'expiration côté client.
+    token_ttl: '%env(int:JWT_TTL)%'

@@ -37,12 +37,15 @@ use Symfony\Component\Validator\Constraints as Assert;
     shortName: 'Progress',
     description: 'Suivi de visionnage/lecture d\'un utilisateur.',
     operations: [
-        new GetCollection(),
-        new Get(normalizationContext: ['groups' => ['progress:read', 'progress:item:read']]),
-        new Post(),
-        new Put(),
-        new Patch(),
-        new Delete(),
+        new GetCollection(security: "is_granted('ROLE_USER')"),
+        new Get(
+            normalizationContext: ['groups' => ['progress:read', 'progress:item:read']],
+            security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.',
+        ),
+        new Post(security: "is_granted('ROLE_USER')"),
+        new Put(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
+        new Patch(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
+        new Delete(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.'),
     ],
     normalizationContext: ['groups' => ['progress:read']],
     denormalizationContext: ['groups' => ['progress:write']],
@@ -52,7 +55,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(ExistsFilter::class, properties: ['anime', 'manga', 'score'])]
 #[ApiFilter(RangeFilter::class, properties: ['score', 'currentEpisode'])]
 #[ApiFilter(OrderFilter::class, properties: ['updatedAt', 'score'])]
-class Progress
+class Progress implements OwnedByUser
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
