@@ -152,11 +152,10 @@ export function useToggleFavorite() {
         return null
       }
 
+      // No `user` in the body: the backend assigns the owner from the JWT, and
+      // the contract made the field optional on 2026-08-02 to say so.
       const result = await apiClient.POST('/api/favorites', {
-        body: {
-          user: userIri,
-          ...(kind === 'anime' ? { anime: targetIri } : { manga: targetIri }),
-        },
+        body: kind === 'anime' ? { anime: targetIri } : { manga: targetIri },
       })
       return unwrap(result)
     },

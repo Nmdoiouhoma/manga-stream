@@ -182,12 +182,10 @@ export function useSaveProgress() {
         return unwrap(result)
       }
 
+      // No `user`: assigned server-side from the JWT (optional since 2026-08-02).
       const result = await apiClient.POST('/api/progress', {
         body: {
-          user: userIri,
-          ...(input.kind === 'anime'
-            ? { anime: input.targetIri }
-            : { manga: input.targetIri }),
+          ...(input.kind === 'anime' ? { anime: input.targetIri } : { manga: input.targetIri }),
           ...payload,
         },
       })

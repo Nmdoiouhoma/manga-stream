@@ -1129,7 +1129,7 @@ export interface components {
         /** @description Commentaire utilisateur (fil de discussion à un niveau de réponse). */
         "Comment-comment.read": {
             readonly id?: number;
-            user: components["schemas"]["User-comment.read"];
+            user?: components["schemas"]["User-comment.read"];
             /** @default  */
             content: string;
             anime?: components["schemas"]["Anime-comment.read"] | null;
@@ -1141,7 +1141,7 @@ export interface components {
         /** @description Commentaire utilisateur (fil de discussion à un niveau de réponse). */
         "Comment-comment.read_comment.item.read": {
             readonly id?: number;
-            user: components["schemas"]["User-comment.read_comment.item.read"];
+            user?: components["schemas"]["User-comment.read_comment.item.read"];
             /** @default  */
             content: string;
             anime?: components["schemas"]["Anime-comment.read_comment.item.read"] | null;
@@ -1157,7 +1157,7 @@ export interface components {
              * Format: iri-reference
              * @example https://example.com/
              */
-            user: string;
+            user?: string;
             /** @default  */
             content: string;
             /**
@@ -1200,7 +1200,7 @@ export interface components {
             createdAt?: string;
         } & (components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-comment.read"];
+            user?: components["schemas"]["User.jsonld-comment.read"];
             /** @default  */
             content: string;
             anime?: components["schemas"]["Anime.jsonld-comment.read"] | null;
@@ -1214,7 +1214,7 @@ export interface components {
             createdAt?: string;
         } & (components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-comment.read_comment.item.read"];
+            user?: components["schemas"]["User.jsonld-comment.read_comment.item.read"];
             /** @default  */
             content: string;
             anime?: components["schemas"]["Anime.jsonld-comment.read_comment.item.read"] | null;
@@ -1434,7 +1434,7 @@ export interface components {
         /** @description Favori d'un utilisateur, ciblant soit un anime, soit un manga. */
         "Favorite-favorite.read": {
             readonly id?: number;
-            user: components["schemas"]["User-favorite.read"];
+            user?: components["schemas"]["User-favorite.read"];
             anime?: components["schemas"]["Anime-favorite.read"] | null;
             manga?: components["schemas"]["Manga-favorite.read"] | null;
             /** Format: date-time */
@@ -1443,7 +1443,7 @@ export interface components {
         /** @description Favori d'un utilisateur, ciblant soit un anime, soit un manga. */
         "Favorite-favorite.read_favorite.item.read": {
             readonly id?: number;
-            user: components["schemas"]["User-favorite.read_favorite.item.read"];
+            user?: components["schemas"]["User-favorite.read_favorite.item.read"];
             anime?: components["schemas"]["Anime-favorite.read_favorite.item.read"] | null;
             manga?: components["schemas"]["Manga-favorite.read_favorite.item.read"] | null;
             /** Format: date-time */
@@ -1455,7 +1455,7 @@ export interface components {
              * Format: iri-reference
              * @example https://example.com/
              */
-            user: string;
+            user?: string;
             /**
              * Format: iri-reference
              * @example https://example.com/
@@ -1488,7 +1488,7 @@ export interface components {
         /** @description Favori d'un utilisateur, ciblant soit un anime, soit un manga. */
         "Favorite.jsonld-favorite.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-favorite.read"];
+            user?: components["schemas"]["User.jsonld-favorite.read"];
             anime?: components["schemas"]["Anime.jsonld-favorite.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-favorite.read"] | null;
             /** Format: date-time */
@@ -1497,7 +1497,7 @@ export interface components {
         /** @description Favori d'un utilisateur, ciblant soit un anime, soit un manga. */
         "Favorite.jsonld-favorite.read_favorite.item.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-favorite.read_favorite.item.read"];
+            user?: components["schemas"]["User.jsonld-favorite.read_favorite.item.read"];
             anime?: components["schemas"]["Anime.jsonld-favorite.read_favorite.item.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-favorite.read_favorite.item.read"] | null;
             /** Format: date-time */
@@ -1992,7 +1992,7 @@ export interface components {
         /** @description Notification utilisateur. */
         "Notification-notification.read": {
             readonly id?: number;
-            user: components["schemas"]["User-notification.read"];
+            user?: components["schemas"]["User-notification.read"];
             /**
              * @default SYSTEM
              * @enum {string}
@@ -2009,7 +2009,7 @@ export interface components {
         /** @description Notification utilisateur. */
         "Notification-notification.read_notification.item.read": {
             readonly id?: number;
-            user: components["schemas"]["User-notification.read_notification.item.read"];
+            user?: components["schemas"]["User-notification.read_notification.item.read"];
             /**
              * @default SYSTEM
              * @enum {string}
@@ -2029,7 +2029,7 @@ export interface components {
              * Format: iri-reference
              * @example https://example.com/
              */
-            user: string;
+            user?: string;
             /**
              * @default SYSTEM
              * @enum {string}
@@ -2062,7 +2062,7 @@ export interface components {
         /** @description Notification utilisateur. */
         "Notification.jsonld-notification.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-notification.read"];
+            user?: components["schemas"]["User.jsonld-notification.read"];
             /**
              * @default SYSTEM
              * @enum {string}
@@ -2079,7 +2079,7 @@ export interface components {
         /** @description Notification utilisateur. */
         "Notification.jsonld-notification.read_notification.item.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-notification.read_notification.item.read"];
+            user?: components["schemas"]["User.jsonld-notification.read_notification.item.read"];
             /**
              * @default SYSTEM
              * @enum {string}
@@ -2096,7 +2096,7 @@ export interface components {
         /** @description Suivi de visionnage/lecture d'un utilisateur. */
         "Progress-progress.read": {
             readonly id?: number;
-            user: components["schemas"]["User-progress.read"];
+            user?: components["schemas"]["User-progress.read"];
             anime?: components["schemas"]["Anime-progress.read"] | null;
             manga?: components["schemas"]["Manga-progress.read"] | null;
             currentEpisode?: number | null;
@@ -2115,7 +2115,7 @@ export interface components {
         /** @description Suivi de visionnage/lecture d'un utilisateur. */
         "Progress-progress.read_progress.item.read": {
             readonly id?: number;
-            user: components["schemas"]["User-progress.read_progress.item.read"];
+            user?: components["schemas"]["User-progress.read_progress.item.read"];
             anime?: components["schemas"]["Anime-progress.read_progress.item.read"] | null;
             manga?: components["schemas"]["Manga-progress.read_progress.item.read"] | null;
             currentEpisode?: number | null;
@@ -2137,7 +2137,7 @@ export interface components {
              * Format: iri-reference
              * @example https://example.com/
              */
-            user: string;
+            user?: string;
             /**
              * Format: iri-reference
              * @example https://example.com/
@@ -2190,7 +2190,7 @@ export interface components {
         /** @description Suivi de visionnage/lecture d'un utilisateur. */
         "Progress.jsonld-progress.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-progress.read"];
+            user?: components["schemas"]["User.jsonld-progress.read"];
             anime?: components["schemas"]["Anime.jsonld-progress.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-progress.read"] | null;
             currentEpisode?: number | null;
@@ -2209,7 +2209,7 @@ export interface components {
         /** @description Suivi de visionnage/lecture d'un utilisateur. */
         "Progress.jsonld-progress.read_progress.item.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-progress.read_progress.item.read"];
+            user?: components["schemas"]["User.jsonld-progress.read_progress.item.read"];
             anime?: components["schemas"]["Anime.jsonld-progress.read_progress.item.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-progress.read_progress.item.read"] | null;
             currentEpisode?: number | null;
@@ -2225,10 +2225,10 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
-        /** @description Recommandation personnalisée (anime ou manga) pour un utilisateur. */
+        /** @description Recommandations de l'utilisateur courant, recalculées si elles sont périmées. */
         "Recommendation-recommendation.read": {
             readonly id?: number;
-            user: components["schemas"]["User-recommendation.read"];
+            user?: components["schemas"]["User-recommendation.read"];
             anime?: components["schemas"]["Anime-recommendation.read"] | null;
             manga?: components["schemas"]["Manga-recommendation.read"] | null;
             /**
@@ -2249,7 +2249,7 @@ export interface components {
         /** @description Recommandation personnalisée (anime ou manga) pour un utilisateur. */
         "Recommendation-recommendation.read_recommendation.item.read": {
             readonly id?: number;
-            user: components["schemas"]["User-recommendation.read_recommendation.item.read"];
+            user?: components["schemas"]["User-recommendation.read_recommendation.item.read"];
             anime?: components["schemas"]["Anime-recommendation.read_recommendation.item.read"] | null;
             manga?: components["schemas"]["Manga-recommendation.read_recommendation.item.read"] | null;
             /**
@@ -2273,7 +2273,7 @@ export interface components {
              * Format: iri-reference
              * @example https://example.com/
              */
-            user: string;
+            user?: string;
             /**
              * Format: iri-reference
              * @example https://example.com/
@@ -2327,10 +2327,10 @@ export interface components {
                 [key: string]: string | null;
             };
         };
-        /** @description Recommandation personnalisée (anime ou manga) pour un utilisateur. */
+        /** @description Recommandations de l'utilisateur courant, recalculées si elles sont périmées. */
         "Recommendation.jsonld-recommendation.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-recommendation.read"];
+            user?: components["schemas"]["User.jsonld-recommendation.read"];
             anime?: components["schemas"]["Anime.jsonld-recommendation.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-recommendation.read"] | null;
             /**
@@ -2351,7 +2351,7 @@ export interface components {
         /** @description Recommandation personnalisée (anime ou manga) pour un utilisateur. */
         "Recommendation.jsonld-recommendation.read_recommendation.item.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
-            user: components["schemas"]["User.jsonld-recommendation.read_recommendation.item.read"];
+            user?: components["schemas"]["User.jsonld-recommendation.read_recommendation.item.read"];
             anime?: components["schemas"]["Anime.jsonld-recommendation.read_recommendation.item.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-recommendation.read_recommendation.item.read"] | null;
             /**

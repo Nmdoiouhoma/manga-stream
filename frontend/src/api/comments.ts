@@ -46,7 +46,8 @@ export type CommentNode = {
   iri: string
   id: number | null
   content: string
-  authorIri: string
+  /** `null` when the API omitted the author (see `toNode`). */
+  authorIri: string | null
   authorName: string
   createdAt: string | null
   parentIri: string | null
@@ -56,12 +57,17 @@ export type CommentNode = {
 }
 
 function toNode(comment: Comment): CommentNode {
+  // `user` became optional in the 2026-08-02 contract (the backend assigns the
+  // owner server-side). It is always present in practice, but an absent author
+  // must not crash the thread — and, more importantly, must not be mistaken for
+  // "the current user", which would offer a Delete button on someone else's
+  // comment. `authorIri: null` never matches, so the button stays hidden.
   return {
     iri: comment['@id'],
     id: comment.id ?? idFromIri(comment['@id']),
     content: comment.content,
-    authorIri: comment.user['@id'],
-    authorName: comment.user.username || 'Utilisateur',
+    authorIri: comment.user?.['@id'] ?? null,
+    authorName: comment.user?.username || 'Utilisateur',
     createdAt: comment.createdAt ?? null,
     parentIri: comment.parent?.['@id'] ?? null,
     replies: [],
@@ -132,8 +138,10 @@ export function useAddComment() {
     mutationFn: async (input: AddCommentInput) => {
       if (!user) throw new Error('Connectez-vous pour commenter.')
 
+      // `user` is deliberately NOT sent: it became optional in the 2026-08-02
+      // contract because the backend assigns the owner from the JWT. Sending it
+      // would be at best redundant, at worst a way to disagree with the server.
       const body: CommentWriteBody = {
-        user: user.iri,
         content: input.content,
         ...(input.kind === 'anime' ? { anime: input.targetIri } : { manga: input.targetIri }),
         ...(input.parentIri ? { parent: input.parentIri } : {}),

@@ -246,6 +246,18 @@ function userRef(user: NonNullable<ReturnType<typeof findUserByIri>>) {
   return { '@id': user['@id'], '@type': 'User', id: user.id, username: user.username }
 }
 
+/**
+ * Owner IRI of a stored resource.
+ *
+ * `user` became optional on the read groups in the 2026-08-02 contract (the
+ * backend assigns the owner server-side, so clients never send it). The mock
+ * store always sets it, but the types no longer promise that — and an
+ * `undefined` owner must never accidentally compare equal to a real user.
+ */
+function ownerIriOf(resource: { user?: { '@id': string } }): string | null {
+  return resource.user?.['@id'] ?? null
+}
+
 /** Matches a stored relation (embedded object) against an IRI query param. */
 function matchesIri(relation: { '@id': string } | null | undefined, iri: string | null): boolean {
   if (!iri) return true
@@ -389,7 +401,7 @@ export const handlers = [
     const search = new URL(request.url).searchParams
     // The real backend scopes the collection to the current user; do the same
     // here, so the front cannot accidentally rely on seeing everyone's rows.
-    const mine = favorites.filter((favorite) => favorite.user['@id'] === user['@id'])
+    const mine = favorites.filter((favorite) => ownerIriOf(favorite) === user['@id'])
     const filtered = mine.filter(
       (favorite) =>
         matchesIri(favorite.anime, search.get('anime')) &&
@@ -420,7 +432,7 @@ export const handlers = [
     // exercised against the correct behaviour without going blind to the bug.
     const duplicate = favorites.find(
       (favorite) =>
-        favorite.user['@id'] === user['@id'] &&
+        ownerIriOf(favorite) === user['@id'] &&
         (favorite.anime?.['@id'] === targetIri || favorite.manga?.['@id'] === targetIri),
     )
     if (duplicate) return problem(422, 'Ce titre est déjà dans vos favoris.')
@@ -450,7 +462,7 @@ export const handlers = [
 
     const index = favorites.findIndex((favorite) => String(favorite.id) === String(params.id))
     if (index === -1) return notFound(`/api/favorites/${params.id}`)
-    if (favorites[index].user['@id'] !== user['@id']) return problem(403, 'Accès refusé.')
+    if (ownerIriOf(favorites[index]) !== user['@id']) return problem(403, 'Accès refusé.')
 
     favorites.splice(index, 1)
     return new HttpResponse(null, { status: 204 })
@@ -463,7 +475,7 @@ export const handlers = [
     const user = authenticate(request)
     if (!user) return unauthorized()
 
-    const mine = progress.filter((entry) => entry.user['@id'] === user['@id'])
+    const mine = progress.filter((entry) => ownerIriOf(entry) === user['@id'])
     return hydraCollection(request, '/api/progress', 'Progress', mine)
   }),
 
@@ -515,7 +527,7 @@ export const handlers = [
 
     const entry = progress.find((item) => String(item.id) === String(params.id))
     if (!entry) return notFound(`/api/progress/${params.id}`)
-    if (entry.user['@id'] !== user['@id']) return problem(403, 'Accès refusé.')
+    if (ownerIriOf(entry) !== user['@id']) return problem(403, 'Accès refusé.')
 
     const body = (await request.json()) as Record<string, unknown>
     if ('status' in body) entry.status = body.status as MockProgress['status']
@@ -598,7 +610,7 @@ export const handlers = [
 
     const index = comments.findIndex((comment) => String(comment.id) === String(params.id))
     if (index === -1) return notFound(`/api/comments/${params.id}`)
-    if (comments[index].user['@id'] !== user['@id']) return problem(403, 'Accès refusé.')
+    if (ownerIriOf(comments[index]) !== user['@id']) return problem(403, 'Accès refusé.')
 
     const removed = comments[index]
     comments.splice(index, 1)
@@ -618,7 +630,7 @@ export const handlers = [
     if (!user) return unauthorized()
 
     const search = new URL(request.url).searchParams
-    let mine = notifications.filter((item) => item.user['@id'] === user['@id'])
+    let mine = notifications.filter((item) => ownerIriOf(item) === user['@id'])
 
     const isRead = search.get('isRead')
     if (isRead !== null) mine = mine.filter((item) => item.isRead === (isRead === 'true'))
@@ -642,7 +654,7 @@ export const handlers = [
 
     const entry = notifications.find((item) => String(item.id) === String(params.id))
     if (!entry) return notFound(`/api/notifications/${params.id}`)
-    if (entry.user['@id'] !== user['@id']) return problem(403, 'Accès refusé.')
+    if (ownerIriOf(entry) !== user['@id']) return problem(403, 'Accès refusé.')
 
     const body = (await request.json()) as Partial<MockNotification>
     if (typeof body.isRead === 'boolean') entry.isRead = body.isRead
