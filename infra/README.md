@@ -8,7 +8,8 @@ le `docker-compose.yml` racine.
 infra/
 ├── backend/
 │   ├── Dockerfile              # PHP 8.4-FPM alpine (stages: base, dev, prod)
-│   ├── docker-entrypoint.sh    # composer install auto + attente de la base
+│   ├── docker-entrypoint.sh    # composer install auto, attente de la base,
+│   │                           # génération des clés JWT, boucle du worker
 │   └── php/
 │       ├── php.ini             # limites, opcache, realpath cache
 │       └── php-fpm.conf        # pool www : listen 9000, clear_env=no
@@ -28,6 +29,7 @@ infra/
 | ---------- | -------------------------------- | ---------------- | ------------ | --------- |
 | `database` | `postgres:16-alpine`             | `database`       | 5432         | **5432**  |
 | `backend`  | `infra/backend/Dockerfile` (dev) | `backend`        | 9000 (FPM)   | —         |
+| `worker`   | même image que `backend`         | `worker`         | —            | —         |
 | `nginx`    | `nginx:1.27-alpine`              | `nginx`          | 80           | **8000**  |
 | `frontend` | `infra/frontend/Dockerfile` (dev)| `frontend`       | 5173         | **5173**  |
 | `mercure`  | `dunglas/mercure:latest`         | `mercure`        | 80           | **3000**  |
@@ -73,8 +75,51 @@ Sinon, manuellement :
 docker compose exec backend php bin/console doctrine:migrations:migrate --no-interaction
 ```
 
+L'entrypoint génère aussi, au premier démarrage, la paire RSA 4096 attendue par
+`lexik/jwt-authentication-bundle` dans `backend/config/jwt/` si elle est
+absente. Ce répertoire est gitignoré : **une clé privée publiée compromettrait
+toute l'authentification**. `GENERATE_JWT_KEYS=0` désactive ce comportement.
+
 Le stage `prod` du même Dockerfile copie le code dans l'image et génère un
 autoloader optimisé (`--classmap-authoritative`).
+
+### `worker`
+
+Même image, même code, même environnement que `backend` (les deux services
+partagent l'ancre YAML `x-backend-env` du `docker-compose.yml`), mais au lieu
+de php-fpm il lance :
+
+```bash
+php bin/console messenger:consume async -vv --time-limit=3600 --memory-limit=128M
+```
+
+La commande passée au conteneur est simplement `worker` : ce n'est pas un
+binaire, c'est une pseudo-commande interprétée par
+`infra/backend/docker-entrypoint.sh`, qui exécute une **boucle de
+supervision** :
+
+1. le consumer s'arrête volontairement toutes les heures ou à 128 Mo (garde-fou
+   classique contre les fuites mémoire d'un process PHP au long cours) — la
+   boucle le relance immédiatement ;
+2. avant chaque lancement, elle sonde `messenger:stats <transport>`. Si le
+   transport n'est pas déclaré, ou si la table `messenger_messages` n'existe pas
+   encore, elle **attend `MESSENGER_RETRY_DELAY` secondes et réessaie** au lieu
+   de laisser le conteneur mourir : sans cela Docker le redémarrerait en boucle
+   serrée, avec une stack trace complète à chaque tour ;
+3. le message d'attente n'est journalisé qu'une fois puis toutes les 20
+   tentatives, pour garder des logs lisibles ;
+4. `SIGTERM` est intercepté et transmis au consumer, qui termine le message en
+   cours avant de sortir (`stop_grace_period: 30s` côté compose).
+
+Le service n'a **pas** de `container_name`, ce qui autorise
+`docker compose up -d --scale worker=3`. Il n'a pas non plus de healthcheck :
+un worker qui n'a rien à consommer est un worker en parfaite santé, et aucune
+sonde bon marché ne distingue ce cas d'une panne. On le surveille avec
+`docker compose logs -f worker`.
+
+Réglages : `MESSENGER_CONSUME_TRANSPORTS` (défaut `async`),
+`MESSENGER_TIME_LIMIT` (`3600`), `MESSENGER_MEMORY_LIMIT` (`128M`),
+`MESSENGER_RETRY_DELAY` (`15`).
 
 ### `nginx`
 
@@ -147,8 +192,11 @@ Reconstruire après modification d'un Dockerfile :
 
 ```bash
 docker compose build --no-cache backend
-docker compose up -d --force-recreate backend
+docker compose up -d --force-recreate backend worker
 ```
+
+> `backend` et `worker` partagent l'image `manga-stream-backend:dev` : une
+> modification du Dockerfile ou de l'entrypoint impose de **recréer les deux**.
 
 Construire et tester l'image frontend de production :
 
@@ -194,4 +242,8 @@ d'où les `COPY --from=infra …` dans les Dockerfiles. Cela nécessite BuildKit
 | `502 Bad Gateway` sur :8000 | Le conteneur `backend` n'a pas fini son `composer install` — voir `docker compose logs backend` |
 | Symfony ne voit pas les variables d'env | `clear_env = no` manquant dans le pool PHP-FPM |
 | EventSource bloqué par CORS | Origine absente de `cors_origins` dans `MERCURE_EXTRA_DIRECTIVES` |
+| Publication Mercure en `401` | JWT signé avec un autre secret que `MERCURE_JWT_SECRET`, ou en-tête `Authorization` absent |
+| Le worker répète « transport 'async' is not declared » | Le transport `async` est encore commenté dans `backend/config/packages/messenger.yaml` |
+| Le worker répète « not queryable / messenger_messages » | La migration créant `messenger_messages` n'a pas été jouée : `docker compose exec backend php bin/console doctrine:migrations:migrate` |
+| Le worker ne voit pas un nouveau message handler | Il exécute le code monté mais garde son cache : `docker compose restart worker` |
 | Port déjà utilisé | Surcharger `BACKEND_PORT` / `FRONTEND_PORT` / `MERCURE_PORT` / `POSTGRES_PORT` dans `.env` |
