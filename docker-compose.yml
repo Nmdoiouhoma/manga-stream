@@ -9,10 +9,70 @@
 #   postgres://localhost:5432  database
 #
 # Internal hostnames (container -> container): database, backend, nginx,
-# mercure, frontend. See infra/README.md.
+# mercure, frontend, worker. See infra/README.md.
 # ===========================================================================
 
 name: manga-stream
+
+# ===========================================================================
+# Shared configuration blocks (YAML anchors)
+#
+# `&name` defines an anchor, `*name` reuses it and `<<:` merges a mapping.
+# Docker Compose resolves all of this BEFORE reading the services, so
+# `docker compose config` shows the fully expanded result — run it whenever
+# you are unsure of what a service really receives.
+#
+# The backend (php-fpm) and the worker (messenger:consume) are the SAME
+# application, so they must see the SAME environment. Defining it once
+# guarantees they can never drift apart.
+# ===========================================================================
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-dev}
+  APP_DEBUG: ${APP_DEBUG:-1}
+  APP_SECRET: ${APP_SECRET:-changeme_dev_secret}
+  # Hostname is `database` (the compose service name), NOT localhost.
+  DATABASE_URL: ${DATABASE_URL:-postgresql://manga:manga@database:5432/manga_stream?serverVersion=16&charset=utf8}
+  DATABASE_HOST: database
+  DATABASE_PORT: 5432
+  # Server-side publishing endpoint (container -> container).
+  MERCURE_URL: ${MERCURE_URL:-http://mercure/.well-known/mercure}
+  # Endpoint advertised to browsers in the Link header.
+  MERCURE_PUBLIC_URL: ${MERCURE_PUBLIC_URL:-http://localhost:3000/.well-known/mercure}
+  # Shared HS256 secret: the backend signs its publisher JWT with it, the hub
+  # verifies it with the same value. Both MUST match.
+  MERCURE_JWT_SECRET: ${MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
+  # RSA keypair used by lexik/jwt-authentication-bundle. The files are
+  # generated on first boot by infra/backend/docker-entrypoint.sh and are
+  # gitignored — never commit them, this repository is public.
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:-%kernel.project_dir%/config/jwt/private.pem}
+  JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-%kernel.project_dir%/config/jwt/public.pem}
+  JWT_PASSPHRASE: ${JWT_PASSPHRASE:-manga_stream_dev_passphrase}
+  # Access-token lifetime, in seconds.
+  JWT_TTL: ${JWT_TTL:-3600}
+  CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$$}
+  # Messenger transport. `doctrine://default` stores the queue in the
+  # `messenger_messages` table of the main database; auto_setup=0 means the
+  # table comes from a Doctrine migration, not from an implicit CREATE TABLE.
+  MESSENGER_TRANSPORT_DSN: ${MESSENGER_TRANSPORT_DSN:-doctrine://default?auto_setup=0}
+  # Anilist GraphQL endpoint, called by `app:anilist:sync` and by the worker.
+  ANILIST_API_URL: ${ANILIST_API_URL:-https://graphql.anilist.co}
+  # Base URL used by Symfony to build absolute URLs outside of an HTTP
+  # request (CLI commands, mailer, Mercure Link headers).
+  DEFAULT_URI: ${DEFAULT_URI:-http://localhost:8000}
+  # Set to 1 to run doctrine:migrations:migrate on container start.
+  RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
+
+# Build definition shared by `backend` and `worker`: same Dockerfile, same
+# image, so the worker always runs exactly the code the API runs.
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: ../infra/backend/Dockerfile
+  target: dev
+  additional_contexts:
+    infra: ./infra
+  args:
+    UID: ${UID:-1000}
+    GID: ${GID:-1000}
 
 services:
 
@@ -50,40 +110,12 @@ services:
   # Symfony / PHP-FPM  (no published port: reached through nginx)
   # -------------------------------------------------------------------------
   backend:
-    build:
-      context: ./backend
-      dockerfile: ../infra/backend/Dockerfile
-      target: dev
-      additional_contexts:
-        infra: ./infra
-      args:
-        UID: ${UID:-1000}
-        GID: ${GID:-1000}
+    build: *backend-build
+    image: manga-stream-backend:dev
     container_name: manga-stream-backend
     restart: unless-stopped
     environment:
-      APP_ENV: ${APP_ENV:-dev}
-      APP_DEBUG: ${APP_DEBUG:-1}
-      APP_SECRET: ${APP_SECRET:-changeme_dev_secret}
-      # Hostname is `database` (the compose service name), NOT localhost.
-      DATABASE_URL: ${DATABASE_URL:-postgresql://manga:manga@database:5432/manga_stream?serverVersion=16&charset=utf8}
-      DATABASE_HOST: database
-      DATABASE_PORT: 5432
-      # Server-side publishing endpoint (container -> container).
-      MERCURE_URL: ${MERCURE_URL:-http://mercure/.well-known/mercure}
-      # Endpoint advertised to browsers in the Link header.
-      MERCURE_PUBLIC_URL: ${MERCURE_PUBLIC_URL:-http://localhost:3000/.well-known/mercure}
-      MERCURE_JWT_SECRET: ${MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-%kernel.project_dir%/config/jwt/private.pem}
-      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-%kernel.project_dir%/config/jwt/public.pem}
-      JWT_PASSPHRASE: ${JWT_PASSPHRASE:-manga_stream_dev_passphrase}
-      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$$}
-      ANILIST_API_URL: ${ANILIST_API_URL:-https://graphql.anilist.co}
-      # Base URL used by Symfony to build absolute URLs outside of an HTTP
-      # request (CLI commands, mailer, Mercure Link headers).
-      DEFAULT_URI: ${DEFAULT_URI:-http://localhost:8000}
-      # Set to 1 to run doctrine:migrations:migrate on container start.
-      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
+      <<: *backend-env
       PHP_IDE_CONFIG: serverName=manga-stream
     volumes:
       - ./backend:/var/www/html:cached
@@ -97,6 +129,55 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
+  # Messenger worker (asynchronous jobs: Anilist sync, notifications, ...)
+  #
+  # Same image and same code as `backend`, but instead of serving HTTP it runs
+  #   php bin/console messenger:consume async -vv \
+  #       --time-limit=3600 --memory-limit=128M
+  # in a supervision loop implemented in infra/backend/docker-entrypoint.sh.
+  #
+  # Why a loop instead of just `command:`?
+  #   1. --time-limit / --memory-limit make the consumer exit ON PURPOSE, to
+  #      avoid long-running PHP memory leaks. Something must restart it.
+  #   2. The `async` transport and its `messenger_messages` table arrive with a
+  #      backend migration. Until then the command fails; the loop waits and
+  #      retries every 15s instead of letting Docker restart the container in a
+  #      tight, noisy crash loop.
+  #
+  # Tuning knobs (all optional, see .env.example): MESSENGER_CONSUME_TRANSPORTS,
+  # MESSENGER_TIME_LIMIT, MESSENGER_MEMORY_LIMIT, MESSENGER_RETRY_DELAY.
+  #
+  # Scale it with:  docker compose up -d --scale worker=3
+  # (this is why it has no container_name: a fixed name forbids scaling).
+  # -------------------------------------------------------------------------
+  worker:
+    build: *backend-build
+    image: manga-stream-backend:dev
+    restart: unless-stopped
+    # `worker` is not a binary: it is a pseudo-command understood by
+    # infra/backend/docker-entrypoint.sh.
+    command: ["worker"]
+    environment:
+      <<: *backend-env
+      MESSENGER_CONSUME_TRANSPORTS: ${MESSENGER_CONSUME_TRANSPORTS:-async}
+      MESSENGER_TIME_LIMIT: ${MESSENGER_TIME_LIMIT:-3600}
+      MESSENGER_MEMORY_LIMIT: ${MESSENGER_MEMORY_LIMIT:-128M}
+      MESSENGER_RETRY_DELAY: ${MESSENGER_RETRY_DELAY:-15}
+    volumes:
+      - ./backend:/var/www/html:cached
+      - composer_cache:/composer
+    depends_on:
+      database:
+        condition: service_healthy
+    # Give Messenger time to finish the message in flight on `compose down`.
+    stop_grace_period: 30s
+    # No healthcheck on purpose: an idle worker with nothing to consume is a
+    # perfectly healthy worker, and there is no cheap probe that tells the
+    # difference. Watch it with `docker compose logs -f worker`.
     networks:
       - manga-stream
 
