@@ -190,6 +190,37 @@ final class OwnershipTest extends ApiTestCase
     }
 
     /**
+     * `isRead` doit figurer dans les réponses. L'accesseur s'appelait `isRead()`, que
+     * PropertyInfo rattache à une propriété `read` : le champ passait pour non lisible
+     * et disparaissait de toutes les réponses, alors que le contrat le déclare requis.
+     * Côté client, toute notification restait éternellement non lue.
+     */
+    public function testNotificationExposesItsReadFlag(): void
+    {
+        $alice = $this->createUser('alice@example.com', 'alice');
+
+        $this->client($this->tokenFor($alice))->request('POST', '/api/notifications', [
+            'headers' => ['Content-Type' => 'application/ld+json'],
+            'json' => ['type' => 'SYSTEM', 'payload' => ['animeId' => 1]],
+        ]);
+        self::assertResponseStatusCodeSame(201);
+
+        $created = json_decode((string) self::getClient()->getResponse()->getContent(), true);
+        self::assertArrayHasKey('isRead', $created, 'isRead doit être sérialisé.');
+        self::assertFalse($created['isRead']);
+
+        $this->client($this->tokenFor($alice))->request('PATCH', $created['@id'], [
+            'headers' => ['Content-Type' => 'application/merge-patch+json'],
+            'json' => ['isRead' => true],
+        ]);
+        self::assertResponseIsSuccessful();
+        self::assertJsonContains(['isRead' => true]);
+
+        $this->client($this->tokenFor($alice))->request('GET', $created['@id']);
+        self::assertJsonContains(['isRead' => true]);
+    }
+
+    /**
      * Les commentaires, eux, sont publics en lecture : seule l'écriture est restreinte.
      */
     public function testCommentsArePubliclyReadableButOnlyWritableWithAToken(): void

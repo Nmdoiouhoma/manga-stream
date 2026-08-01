@@ -81,6 +81,15 @@ class Notification implements OwnedByUser
     #[Groups(['notification:read', 'notification:write'])]
     private array $payload = [];
 
+    /**
+     * Accesseur nommé `getIsRead()` et non `isRead()` : pour une propriété `isRead`,
+     * Symfony PropertyInfo cherche `getIsRead`/`isIsRead`/`hasIsRead`. `isRead()` est
+     * lu comme l'accesseur d'une propriété `read`, si bien que `isRead` passait pour
+     * non lisible et disparaissait silencieusement de TOUTES les réponses — alors que
+     * le contrat la déclarait requise et que l'écriture, elle, fonctionnait
+     * (`setIsRead()` est bien détecté). Côté client, chaque notification revenait donc
+     * éternellement non lue.
+     */
     #[ORM\Column(type: 'boolean', options: ['default' => false])]
     #[Groups(['notification:read', 'notification:write'])]
     private bool $isRead = false;
@@ -141,7 +150,7 @@ class Notification implements OwnedByUser
         return $this;
     }
 
-    public function isRead(): bool
+    public function getIsRead(): bool
     {
         return $this->isRead;
     }
