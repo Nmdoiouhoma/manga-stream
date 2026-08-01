@@ -281,7 +281,6 @@ is fixed.
 
 | Still open | Frontend workaround |
 | ---------- | ------------------- |
-| `Notification.isRead` is **never serialised** — the contract declares it required on the read group, and the value *is* stored (`?isRead=` filters on it correctly), but it is absent from every POST / GET / PATCH response | `useNotifications` also queries `?isRead=false` and derives the flag from set membership. Without this every notification reads as unread forever and "mark as read" is undone by the next refetch. |
 | `Comment.parent` is typed as a nested write object instead of `format: iri-reference`, unlike every other relation | posts an IRI and overrides the type locally — the API accepts it |
 | `POST /api/login` documents only a `200` response (no 401/400), so `openapi-fetch` types `error` as `never` | reads the status off `Response` directly |
 | `GET /api/me` answers `"@id": "/api/me"` (operation IRI, not resource IRI) | `canonicalUserIri()` rebuilds `/api/users/{id}` from `id` |
@@ -293,6 +292,7 @@ Fixed by the backend during phase 2, workaround kept as a safety net:
 | Was | Now |
 | --- | --- |
 | A duplicate favourite returned **500** with a raw `SQLSTATE[23505]` message and a stack trace | clean **422**, `user: Cet anime est déjà dans vos favoris.` — `unwrap()`'s sanitiser still guards against any other DB leak |
+| `Notification.isRead` was **never serialised**, though the contract declared it required and the value *was* stored (`?isRead=` filtered on it correctly). Every notification therefore read as unread forever, and "mark as read" was undone by the next refetch. | serialised again. `useNotifications` still issues a second `?isRead=false` query and falls back to set membership **only when the field is absent** — the field always wins when present. Cheap safety net; delete both the second query and the `typeof … === 'boolean'` branch in `toEntry` once the fix is committed and stable. |
 
 ## Notes
 

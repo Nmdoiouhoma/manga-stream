@@ -97,12 +97,14 @@ function toEntry(notification: NotificationResource, unreadIris: Set<string>): N
     iri,
     id: notification.id ?? idFromIri(iri),
     type: notification.type,
-    // ⚠️ The contract declares `isRead` as a **required** property of the read
-    // group, but the running backend never serialises it (verified
-    // 2026-08-01: absent from POST, GET and PATCH responses alike). The value
-    // is stored correctly — `?isRead=` filters on it just fine — so the flag is
-    // recovered from the filtered query instead. Reported upstream; the day it
-    // is fixed, the field wins and the fallback goes unused.
+    // The field wins whenever it is there. The fallback exists because the
+    // backend spent part of phase 2 **not serialising `isRead` at all** while
+    // the contract declared it required — the value was stored fine (`?isRead=`
+    // filtered on it correctly), it just never reached the client, so every
+    // notification read as unread forever and "mark as read" was undone by the
+    // next refetch. Fixed backend-side on 2026-08-02; kept as a safety net
+    // until that fix is committed and stable, then delete this branch and the
+    // second query in `useNotifications`.
     isRead: typeof notification.isRead === 'boolean' ? notification.isRead : !unreadIris.has(iri),
     createdAt: notification.createdAt ?? null,
     payload,
@@ -123,10 +125,9 @@ export function useNotifications() {
     queryKey: notificationsQueryKey(userIri),
     enabled: userIri !== null,
     queryFn: async () => {
-      // Two requests on purpose: the second one is the only reliable way to
-      // know what is unread while the backend omits `isRead` from its payloads
-      // (see `toEntry`). It is a small, filtered collection, and it costs
-      // nothing once the backend serialises the field again.
+      // Two requests on purpose: the second is the fallback source of truth for
+      // the unread flag (see `toEntry`). Small, filtered collection; remove it
+      // together with the fallback once `isRead` is reliably serialised.
       const [allResult, unreadResult] = await Promise.all([
         apiClient.GET('/api/notifications', {
           params: {
