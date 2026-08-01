@@ -28,7 +28,10 @@ export type AuthContextValue = {
   acknowledgeExpiry: () => void
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
+/**
+ * Exported so `useAuth` (a separate module, to keep this file component-only
+ * for fast refresh) can read it. Nothing else should consume it directly.
+ */
 export const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {

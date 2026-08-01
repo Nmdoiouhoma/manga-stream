@@ -1,7 +1,15 @@
 import type { ReactNode } from 'react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { CatalogPage } from './pages/CatalogPage'
-import { ComingSoon, NotFoundPage } from './pages/ComingSoon'
+import { MediaDetailPage } from './pages/MediaDetailPage'
+import { FavoritesPage } from './pages/FavoritesPage'
+import { ProfilePage } from './pages/ProfilePage'
+import { LoginPage } from './pages/LoginPage'
+import { RegisterPage } from './pages/RegisterPage'
+import { NotFoundPage } from './pages/NotFoundPage'
+import { NotificationBell } from './components/NotificationBell'
+import { RequireAuth } from './auth/RequireAuth'
+import { useAuth } from './auth/useAuth'
 import { USE_MOCKS } from './config'
 
 const NAV_ITEMS = [
@@ -11,6 +19,8 @@ const NAV_ITEMS = [
 ]
 
 function AppShell({ children }: { children: ReactNode }) {
+  const { isAuthenticated, user, logout } = useAuth()
+
   return (
     <div className="app">
       <header className="topbar">
@@ -33,18 +43,43 @@ function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          {USE_MOCKS && (
-            <span className="badge badge--mock" title="VITE_USE_MOCKS=true — MSW intercepte /api">
-              mocks
-            </span>
-          )}
+          <div className="topbar__right">
+            {USE_MOCKS && (
+              <span className="badge badge--mock" title="VITE_USE_MOCKS=true — MSW intercepte /api">
+                mocks
+              </span>
+            )}
+
+            {/* The bell only makes sense — and only queries — when signed in. */}
+            {isAuthenticated && <NotificationBell />}
+
+            {isAuthenticated ? (
+              <div className="account">
+                <Link to="/profile" className="account__name">
+                  {user?.username}
+                </Link>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={logout}>
+                  Déconnexion
+                </button>
+              </div>
+            ) : (
+              <div className="account">
+                <Link to="/login" className="btn btn--ghost btn--sm">
+                  Connexion
+                </Link>
+                <Link to="/register" className="btn btn--primary btn--sm">
+                  Inscription
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
       <main className="main">{children}</main>
 
       <footer className="footer">
-        manga-stream · phase 1 · données simulées via MSW tant que l’API n’est pas branchée
+        manga-stream · phase 2 · {USE_MOCKS ? 'données simulées via MSW' : 'API réelle'}
       </footer>
     </div>
   )
@@ -55,22 +90,29 @@ export default function App() {
     <AppShell>
       <Routes>
         <Route path="/" element={<CatalogPage />} />
-        <Route
-          path="/anime/:id"
-          element={<ComingSoon title="Fiche anime" note="Synopsis, épisodes, commentaires." />}
-        />
-        <Route
-          path="/manga/:id"
-          element={<ComingSoon title="Fiche manga" note="Synopsis, chapitres, commentaires." />}
-        />
+        <Route path="/anime/:id" element={<MediaDetailPage kind="anime" />} />
+        <Route path="/manga/:id" element={<MediaDetailPage kind="manga" />} />
+
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+
         <Route
           path="/favorites"
-          element={<ComingSoon title="Favoris" note="Votre liste de suivi personnelle." />}
+          element={
+            <RequireAuth>
+              <FavoritesPage />
+            </RequireAuth>
+          }
         />
         <Route
           path="/profile"
-          element={<ComingSoon title="Profil" note="Compte, progression et préférences." />}
+          element={
+            <RequireAuth>
+              <ProfilePage />
+            </RequireAuth>
+          }
         />
+
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AppShell>

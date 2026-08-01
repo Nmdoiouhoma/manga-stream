@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { FavoriteButton } from './FavoriteButton'
 import { formatScore, STATUS_LABELS, type MediaItem } from '../types/media'
 
 /**
@@ -42,6 +43,14 @@ export function MediaCard({ item }: { item: MediaItem }) {
             {formatScore(item.averageScore)}
           </span>
         )}
+
+        {/* Sits inside the <Link>; the button stops propagation itself. */}
+        <FavoriteButton
+          targetIri={item.iri}
+          kind={item.kind}
+          title={item.title}
+          coverImage={item.coverImage}
+        />
       </div>
 
       <div className="card__body">

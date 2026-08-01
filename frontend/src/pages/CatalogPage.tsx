@@ -1,19 +1,83 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { FilterBar } from '../components/FilterBar'
 import { MediaCard, MediaCardSkeleton } from '../components/MediaCard'
 import { DEFAULT_FILTERS, useCatalog, useGenres, type CatalogFilters } from '../api/queries'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { ITEMS_PER_PAGE } from '../config'
+import { MEDIA_STATUSES, SEASON_LABELS, type MediaKindFilter, type MediaSeason, type MediaStatus } from '../types/media'
+
+/**
+ * Filters live in the **query string**, not only in component state.
+ *
+ * That is what makes the genre chips on a detail page work: they are plain
+ * `<Link to="/?genre=action">`, no shared store, no navigation state to thread
+ * through. It also makes a filtered catalogue shareable, survivable across a
+ * reload, and gives back/forward the behaviour users expect.
+ */
+function readFilters(params: URLSearchParams): CatalogFilters {
+  return {
+    search: params.get('q') ?? '',
+    genres: params.getAll('genre').filter(Boolean),
+    // Query-string values are user-controlled: validate against the contract
+    // enums rather than casting, or a crafted URL sends garbage to the API.
+    status: isStatus(params.get('status')) ? (params.get('status') as MediaStatus) : 'all',
+    season: isSeason(params.get('season')) ? (params.get('season') as MediaSeason) : 'all',
+    kind: isKind(params.get('kind')) ? (params.get('kind') as MediaKindFilter) : 'all',
+  }
+}
+
+const SEASON_VALUES = Object.keys(SEASON_LABELS)
+
+function isStatus(value: string | null): boolean {
+  return value !== null && (MEDIA_STATUSES as readonly string[]).includes(value)
+}
+function isSeason(value: string | null): boolean {
+  return value !== null && SEASON_VALUES.includes(value)
+}
+function isKind(value: string | null): boolean {
+  return value === 'anime' || value === 'manga' || value === 'all'
+}
+
+/** Serialises filters back to the query string, omitting every default. */
+function writeFilters(filters: CatalogFilters): URLSearchParams {
+  const params = new URLSearchParams()
+  if (filters.search) params.set('q', filters.search)
+  for (const genre of filters.genres) params.append('genre', genre)
+  if (filters.status !== 'all') params.set('status', filters.status)
+  if (filters.season !== 'all') params.set('season', filters.season)
+  if (filters.kind !== 'all') params.set('kind', filters.kind)
+  return params
+}
 
 export function CatalogPage() {
-  // The raw input is kept separate from the debounced value that drives the query.
-  const [searchInput, setSearchInput] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlFilters = useMemo(() => readFilters(searchParams), [searchParams])
+  const urlSearch = urlFilters.search
+
+  // The raw input is kept separate from the debounced value that drives the
+  // query — and from the URL, which only ever receives the settled value.
+  const [searchInput, setSearchInput] = useState(urlSearch)
   const debouncedSearch = useDebouncedValue(searchInput, 350)
-  const [filters, setFilters] = useState<CatalogFilters>(DEFAULT_FILTERS)
+
+  // Adopt an externally-changed URL term (genre link, browser back). The
+  // functional update makes this a no-op when the values already agree, so it
+  // cannot fight the user's typing.
+  useEffect(() => {
+    setSearchInput((current) => (current === urlSearch ? current : urlSearch))
+  }, [urlSearch])
+
+  // Push the debounced term into the URL once it has settled. `replace` keeps
+  // every keystroke out of the history stack.
+  useEffect(() => {
+    const trimmed = debouncedSearch.trim()
+    if (trimmed === urlSearch) return
+    setSearchParams(writeFilters({ ...urlFilters, search: trimmed }), { replace: true })
+  }, [debouncedSearch, urlSearch, urlFilters, setSearchParams])
 
   const effectiveFilters = useMemo<CatalogFilters>(
-    () => ({ ...filters, search: debouncedSearch.trim() }),
-    [filters, debouncedSearch],
+    () => ({ ...urlFilters, search: debouncedSearch.trim() }),
+    [urlFilters, debouncedSearch],
   )
 
   const { data: genres, isLoading: genresLoading } = useGenres()
@@ -30,14 +94,17 @@ export function CatalogPage() {
     isFetching,
   } = useCatalog(effectiveFilters)
 
-  const handleChange = useCallback((next: Partial<CatalogFilters>) => {
-    setFilters((current) => ({ ...current, ...next }))
-  }, [])
+  const handleChange = useCallback(
+    (next: Partial<CatalogFilters>) => {
+      setSearchParams(writeFilters({ ...urlFilters, ...next }))
+    },
+    [urlFilters, setSearchParams],
+  )
 
   const handleReset = useCallback(() => {
     setSearchInput('')
-    setFilters(DEFAULT_FILTERS)
-  }, [])
+    setSearchParams(writeFilters(DEFAULT_FILTERS))
+  }, [setSearchParams])
 
   // Infinite scroll: load the next page when the sentinel enters the viewport.
   const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -112,9 +179,7 @@ export function CatalogPage() {
 
       <div className="grid">
         {showSkeletons
-          ? Array.from({ length: ITEMS_PER_PAGE }, (_, index) => (
-              <MediaCardSkeleton key={index} />
-            ))
+          ? Array.from({ length: ITEMS_PER_PAGE }, (_, index) => <MediaCardSkeleton key={index} />)
           : items.map((item) => <MediaCard key={item.key} item={item} />)}
 
         {isFetchingNextPage &&
@@ -128,9 +193,7 @@ export function CatalogPage() {
             Charger plus
           </button>
         )}
-        {!hasNextPage && items.length > 0 && (
-          <p className="catalog__end">Fin du catalogue</p>
-        )}
+        {!hasNextPage && items.length > 0 && <p className="catalog__end">Fin du catalogue</p>}
       </div>
     </div>
   )
