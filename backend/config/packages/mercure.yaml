@@ -1,0 +1,27 @@
+mercure:
+    hubs:
+        default:
+            # Endpoint de publication, appelé serveur -> hub (nom de service Docker).
+            url: '%env(MERCURE_URL)%'
+            # Endpoint annoncé aux navigateurs (en-tête Link, et documentation).
+            public_url: '%env(MERCURE_PUBLIC_URL)%'
+            jwt:
+                # JWT d'éditeur signé en HS256 avec le secret partagé avec le hub.
+                secret: '%env(MERCURE_JWT_SECRET)%'
+                # `*` : le backend est le seul éditeur, il publie sur les topics qu'il
+                # définit lui-même. Les abonnés, eux, sont restreints topic par topic
+                # (voir App\Service\Notification\NotificationTopics).
+                publish: ['*']
+
+when@test:
+    mercure:
+        hubs:
+            default:
+                # Aucun appel réseau en test : le service `Symfony\Component\Mercure\HubInterface`
+                # est remplacé par un double qui enregistre les updates
+                # (voir config/services_test.yaml). Cette URL n'est jamais contactée.
+                url: 'http://mercure.invalid/.well-known/mercure'
+                public_url: 'http://mercure.invalid/.well-known/mercure'
+                jwt:
+                    secret: 'test-only-not-a-secret'
+                    publish: ['*']

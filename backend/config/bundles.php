@@ -13,4 +13,6 @@ return [
     // Enveloppe chaque test dans une transaction annulée à la fin : les tests
     // partent tous d'une base propre sans avoir à recréer le schéma.
     DAMA\DoctrineTestBundle\DAMADoctrineTestBundle::class => ['test' => true],
+    // Publication temps réel vers le hub Mercure (voir config/packages/mercure.yaml).
+    Symfony\Bundle\MercureBundle\MercureBundle::class => ['all' => true],
 ];
