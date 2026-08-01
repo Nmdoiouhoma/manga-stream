@@ -2,9 +2,10 @@
  * React Query hooks over the typed API client — catalogue and detail pages.
  *
  * Query parameters below are NOT invented: every one of them is declared in
- * `docs/openapi.yaml` for the corresponding operation, with the single
- * documented exception of `title` (see `SearchQuery` below).
+ * `docs/openapi.yaml` for the corresponding operation.
  *   - `title`               → combined OR search on the three title columns
+ *                             (custom backend filter, in the contract since
+ *                             the 2026-08-01 regeneration)
  *   - `genres.slug[]`       → exact match on the related genre slug, repeatable
  *   - `status[]`            → exact match on the status enum, repeatable
  *   - `season`              → anime only (mangas have no season filter)
@@ -55,24 +56,6 @@ export const DEFAULT_FILTERS: CatalogFilters = {
 type AnimeQuery = NonNullable<paths['/api/animes']['get']['parameters']['query']>
 type MangaQuery = NonNullable<paths['/api/mangas']['get']['parameters']['query']>
 
-/**
- * ⚠️ The one place where we knowingly go beyond the generated types.
- *
- * The backend ships a custom `?title=` filter that ORs `titleRomaji`,
- * `titleEnglish` and `titleNative` — verified live against
- * `http://localhost:8000` (it appears in the Hydra `IriTemplate` of
- * `/api/animes`). But `docs/openapi.yaml` has not been regenerated yet, so
- * `src/api/schema.ts` still only knows the three independent SearchFilters,
- * which API Platform ANDs together and which therefore cannot express the OR
- * we want.
- *
- * Rather than search `titleRomaji` alone and miss every English-only match, we
- * widen the query type by exactly one optional key and narrow it back with a
- * single cast per call site. The day `docs/openapi.yaml` gains `title`,
- * `npm run generate:api` makes this alias redundant and nothing else moves.
- */
-type SearchQuery<Q> = Q & { title?: string }
-
 /** One cursor per collection; `null` means "exhausted, or excluded by the type filter". */
 type CatalogCursor = { anime: number | null; manga: number | null }
 
@@ -94,23 +77,19 @@ function filterParams(filters: CatalogFilters) {
 }
 
 async function fetchAnimePage(filters: CatalogFilters, page: number) {
-  const query: SearchQuery<AnimeQuery> = {
+  const query: AnimeQuery = {
     ...filterParams(filters),
     page,
     // `season` exists on the anime collection only.
     ...(filters.season !== 'all' ? { season: filters.season } : {}),
   }
-  const result = await apiClient.GET('/api/animes', {
-    params: { query: query as AnimeQuery },
-  })
+  const result = await apiClient.GET('/api/animes', { params: { query } })
   return normalizeCollection(unwrap(result))
 }
 
 async function fetchMangaPage(filters: CatalogFilters, page: number) {
-  const query: SearchQuery<MangaQuery> = { ...filterParams(filters), page }
-  const result = await apiClient.GET('/api/mangas', {
-    params: { query: query as MangaQuery },
-  })
+  const query: MangaQuery = { ...filterParams(filters), page }
+  const result = await apiClient.GET('/api/mangas', { params: { query } })
   return normalizeCollection(unwrap(result))
 }
 

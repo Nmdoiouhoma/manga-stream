@@ -4,7 +4,7 @@
  * The store stays the source of truth so the API client can read the token
  * without importing React. This provider only subscribes to it and re-renders.
  */
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getSession,
@@ -12,27 +12,10 @@ import {
   setSession,
   subscribe,
   type Session,
-  type SessionUser,
 } from './session'
 import { login as loginRequest, register as registerRequest } from '../api/auth'
 import type { Credentials, RegisterInput } from '../api/auth'
-
-export type AuthContextValue = {
-  user: SessionUser | null
-  isAuthenticated: boolean
-  /** True between the moment the token died and the moment the user sees /login. */
-  sessionExpired: boolean
-  login: (credentials: Credentials) => Promise<void>
-  register: (input: RegisterInput) => Promise<{ loggedIn: boolean }>
-  logout: () => void
-  acknowledgeExpiry: () => void
-}
-
-/**
- * Exported so `useAuth` (a separate module, to keep this file component-only
- * for fast refresh) can read it. Nothing else should consume it directly.
- */
-export const AuthContext = createContext<AuthContextValue | null>(null)
+import { AuthContext, type AuthContextValue } from './context'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setLocalSession] = useState<Session | null>(() => getSession())
@@ -68,12 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (input: RegisterInput) => {
+      // `registerRequest` creates the account *and* logs in — the contract has
+      // no operation doing both, so it chains POST /api/register + POST /api/login.
       const next = await registerRequest(input)
-      if (!next) return { loggedIn: false }
       setSessionExpired(false)
       setSession(next)
       await queryClient.invalidateQueries()
-      return { loggedIn: true }
     },
     [queryClient],
   )

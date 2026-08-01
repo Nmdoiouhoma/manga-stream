@@ -28,6 +28,22 @@ export const apiClient = createClient<paths, typeof MEDIA_TYPE>({
 })
 
 /**
+ * Second client, pinned to plain `application/json`, for the handful of
+ * operations the contract does **not** serve as JSON-LD.
+ *
+ * `POST /api/login` is the only one today: it declares `application/json`
+ * exclusively, so asking `apiClient` for it yields `never` — the media type it
+ * is pinned to simply is not in that operation's response map.
+ *
+ * It deliberately carries **no auth middleware**: login must never be able to
+ * trigger the global "session expired" logout, and it has no token to send.
+ */
+export const jsonApiClient = createClient<paths, 'application/json'>({
+  baseUrl: API_BASE_URL,
+  headers: { Accept: 'application/json' },
+})
+
+/**
  * Auth middleware — the single place where the JWT enters the request, and the
  * single place where a 401 is turned into a logout. No call site knows about
  * authentication.
@@ -40,9 +56,12 @@ export const apiClient = createClient<paths, typeof MEDIA_TYPE>({
  *     `notifyUnauthorized()` is itself idempotent (it no-ops once the session
  *     is gone). A burst of parallel 401s therefore triggers exactly one logout.
  *
- * The login/register calls do NOT go through this client (see `api/auth.ts`),
- * so a wrong password can never be mistaken for an expired session.
+ * `AUTH_PATHS` is belt-and-braces: those requests normally carry no token, so
+ * guard 2 already skips them, but an authenticated user re-submitting the
+ * login form must never be logged out by their own typo.
  */
+const AUTH_PATHS = ['/api/login', '/api/register']
+
 const authMiddleware: Middleware = {
   onRequest({ request }) {
     const session = getSession()
@@ -62,11 +81,13 @@ const authMiddleware: Middleware = {
   },
 
   onResponse({ request, response }) {
+    if (response.status !== 401) return response
     // Guard 2: only an *authenticated* request that got rejected means the
     // token died. A 401 on an anonymous request is just a protected endpoint.
-    if (response.status === 401 && request.headers.has('Authorization')) {
-      notifyUnauthorized()
-    }
+    if (!request.headers.has('Authorization')) return response
+    if (AUTH_PATHS.some((path) => new URL(request.url).pathname.endsWith(path))) return response
+
+    notifyUnauthorized()
     return response
   },
 }

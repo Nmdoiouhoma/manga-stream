@@ -13,7 +13,6 @@ export function RegisterPage() {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
   if (isAuthenticated) return <Navigate to="/" replace />
@@ -21,7 +20,6 @@ export function RegisterPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
-    setNotice(null)
 
     // Client-side checks are courtesy only; the backend validates for real.
     if (password.length < MIN_PASSWORD_LENGTH) {
@@ -35,23 +33,8 @@ export function RegisterPage() {
 
     setPending(true)
     try {
-      const { loggedIn } = await register({
-        email: email.trim(),
-        username: username.trim(),
-        password,
-      })
-
-      if (loggedIn) {
-        navigate('/', { replace: true })
-      } else {
-        // Account created, but `POST /api/login` does not exist yet on the
-        // backend. Telling the user their account exists is far better than
-        // failing an operation that actually succeeded.
-        setNotice(
-          'Compte créé. La connexion automatique est impossible pour le moment ' +
-            "(le backend n'expose pas encore POST /api/login) — réessayez de vous connecter plus tard.",
-        )
-      }
+      await register({ email: email.trim(), username: username.trim(), password })
+      navigate('/', { replace: true })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'La création du compte a échoué.')
     } finally {
@@ -118,11 +101,6 @@ export function RegisterPage() {
           {error && (
             <p className="form__error" role="alert">
               {error}
-            </p>
-          )}
-          {notice && (
-            <p className="notice notice--warn" role="status">
-              {notice}
             </p>
           )}
 

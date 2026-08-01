@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { ApiError } from '../api/client'
 
 type LocationState = { from?: string } | null
 
@@ -32,7 +31,7 @@ export function LoginPage() {
       await login({ email: email.trim(), password })
       navigate(from, { replace: true })
     } catch (caught) {
-      setError(messageFor(caught))
+      setError(caught instanceof Error ? caught.message : 'La connexion a échoué.')
     } finally {
       setPending(false)
     }
@@ -91,17 +90,4 @@ export function LoginPage() {
       </div>
     </div>
   )
-}
-
-/**
- * A missing `/api/login` is a *deployment* state, not a user error — say so
- * explicitly instead of showing "identifiants invalides" for something the
- * user cannot fix.
- */
-function messageFor(error: unknown): string {
-  if (error instanceof ApiError && error.status === 404) {
-    return "La connexion n'est pas encore disponible : le backend n'expose pas encore POST /api/login."
-  }
-  if (error instanceof Error) return error.message
-  return 'La connexion a échoué.'
 }
