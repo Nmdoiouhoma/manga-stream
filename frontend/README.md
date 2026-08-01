@@ -274,19 +274,25 @@ src/
 Genre chips on a detail sheet link back to `/?genre=<slug>`; the catalogue reads
 its filters from the URL, so no shared store is involved and the link is shareable.
 
-## Known backend gaps (verified against the running API, 2026-08-01)
+## Known backend gaps (verified against the running API, 2026-08-02)
 
-These are **backend** issues the frontend works around. Remove the workarounds
-once they are fixed.
+**Backend** issues the frontend works around. Remove the workaround when the row
+is fixed.
 
-| Issue | Frontend workaround |
-| ----- | ------------------- |
-| `Notification.isRead` is never serialised (contract says required; the value *is* stored — `?isRead=` filters on it correctly) | `useNotifications` also queries `?isRead=false` and derives the flag from set membership |
-| A duplicate favourite returns **500** with a raw `SQLSTATE[23505]` message and a stack trace, instead of 409/422 | `unwrap()` sanitises DB-shaped details; no SQL ever reaches the UI |
-| `Comment.parent` is typed as a nested write object instead of `format: iri-reference` (every other relation is an IRI) | posts an IRI and overrides the type locally — the API accepts it |
+| Still open | Frontend workaround |
+| ---------- | ------------------- |
+| `Notification.isRead` is **never serialised** — the contract declares it required on the read group, and the value *is* stored (`?isRead=` filters on it correctly), but it is absent from every POST / GET / PATCH response | `useNotifications` also queries `?isRead=false` and derives the flag from set membership. Without this every notification reads as unread forever and "mark as read" is undone by the next refetch. |
+| `Comment.parent` is typed as a nested write object instead of `format: iri-reference`, unlike every other relation | posts an IRI and overrides the type locally — the API accepts it |
 | `POST /api/login` documents only a `200` response (no 401/400), so `openapi-fetch` types `error` as `never` | reads the status off `Response` directly |
+| `GET /api/me` answers `"@id": "/api/me"` (operation IRI, not resource IRI) | `canonicalUserIri()` rebuilds `/api/users/{id}` from `id` |
 | Episodes and chapters are not imported by the AniList sync — every media has `episodes: []` / `chapters: []` | the lists render an explicit "N announced, none referenced yet" message |
 | Nothing is published to Mercure (no `HubInterface`, no `mercure: true` on any resource) | the SSE layer degrades silently; the bell falls back to refresh-on-open |
+
+Fixed by the backend during phase 2, workaround kept as a safety net:
+
+| Was | Now |
+| --- | --- |
+| A duplicate favourite returned **500** with a raw `SQLSTATE[23505]` message and a stack trace | clean **422**, `user: Cet anime est déjà dans vos favoris.` — `unwrap()`'s sanitiser still guards against any other DB leak |
 
 ## Notes
 

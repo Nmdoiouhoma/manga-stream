@@ -1155,6 +1155,11 @@ export interface components {
         "Comment-comment.write": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -1176,6 +1181,11 @@ export interface components {
         "Comment-comment.write.jsonMergePatch": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -1453,6 +1463,11 @@ export interface components {
         "Favorite-favorite.write": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -1471,6 +1486,11 @@ export interface components {
         "Favorite-favorite.write.jsonMergePatch": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -2027,6 +2047,11 @@ export interface components {
         "Notification-notification.write": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -2045,6 +2070,11 @@ export interface components {
         "Notification-notification.write.jsonMergePatch": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -2135,6 +2165,11 @@ export interface components {
         "Progress-progress.write": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -2163,6 +2198,11 @@ export interface components {
         "Progress-progress.write.jsonMergePatch": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -2271,6 +2311,11 @@ export interface components {
         "Recommendation-recommendation.write": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
@@ -2301,6 +2346,11 @@ export interface components {
         "Recommendation-recommendation.write.jsonMergePatch": {
             /**
              * Format: iri-reference
+             * @description Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+             *     imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+             *     validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+             *     de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+             *     colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
              * @example https://example.com/
              */
             user?: string;
