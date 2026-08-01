@@ -7,6 +7,13 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # AniList — l'endpoint est public et sans clé d'API.
+    app.anilist.endpoint: '%env(default:app.anilist.default_endpoint:ANILIST_ENDPOINT)%'
+    app.anilist.default_endpoint: 'https://graphql.anilist.co'
+    # Intervalle minimal entre deux requêtes sortantes, en secondes (~50 req/min).
+    # AniList annonce 90 req/min mais applique en pratique une limite plus basse.
+    app.anilist.min_interval: 1.2
+    app.anilist.max_retries: 4
 
 services:
     # default configuration for services in *this* file

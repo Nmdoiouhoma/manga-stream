@@ -125,6 +125,17 @@ class Manga
     #[Groups(['manga:read', 'manga:write'])]
     private ?MediaStatus $status = null;
 
+    /**
+     * Début de publication (renseigné par la synchronisation AniList).
+     */
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[Groups(['manga:read', 'manga:write'])]
+    private ?\DateTimeImmutable $startDate = null;
+
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[Groups(['manga:read', 'manga:write'])]
+    private ?\DateTimeImmutable $endDate = null;
+
     #[ORM\Column(type: 'datetime_immutable')]
     #[Groups(['manga:read'])]
     private \DateTimeImmutable $createdAt;
@@ -287,6 +298,30 @@ class Manga
     public function getStatus(): ?MediaStatus
     {
         return $this->status;
+    }
+
+    public function getStartDate(): ?\DateTimeImmutable
+    {
+        return $this->startDate;
+    }
+
+    public function setStartDate(?\DateTimeImmutable $startDate): static
+    {
+        $this->startDate = $startDate;
+
+        return $this;
+    }
+
+    public function getEndDate(): ?\DateTimeImmutable
+    {
+        return $this->endDate;
+    }
+
+    public function setEndDate(?\DateTimeImmutable $endDate): static
+    {
+        $this->endDate = $endDate;
+
+        return $this;
     }
 
     public function setStatus(?MediaStatus $status): static
