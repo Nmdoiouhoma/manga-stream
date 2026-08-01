@@ -14,6 +14,16 @@
 !/backend/.env.dev
 !/backend/.env.test
 
+# Clés et certificats, où qu'ils soient. Le dépôt est PUBLIC : une clé privée
+# publiée permettrait de forger un JWT pour n'importe quel compte. La CI
+# vérifie en plus qu'aucun .pem n'est suivi par git.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+
 # ---------------------------------------------------------------------------
 # PHP / Symfony (backend)
 # ---------------------------------------------------------------------------
