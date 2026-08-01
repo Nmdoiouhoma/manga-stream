@@ -1,0 +1,198 @@
+/**
+ * Comment threads on a media detail page.
+ *
+ * ── Why the tree is built client-side ─────────────────────────────────────
+ * The contract exposes `replies[]` only on the **item** read group
+ * (`Comment.jsonld-comment.read_comment.item.read`), not on the collection one.
+ * Rendering a thread from the collection would therefore mean one extra
+ * request per root comment. Instead we fetch every comment of the media in a
+ * single call and rebuild the parent/child tree from the `parent` field, which
+ * the collection group *does* expose. Same result, one request.
+ *
+ * The domain is documented as "fil de discussion à un niveau de réponse", so
+ * the tree is deliberately flattened to two levels: a root and its replies.
+ */
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { apiClient, unwrap } from './client'
+import { normalizeCollection } from './hydra'
+import { useAuth } from '../auth/useAuth'
+import { idFromIri, type MediaKind } from '../types/media'
+import type { components, paths } from './schema'
+
+type Comment = components['schemas']['Comment.jsonld-comment.read']
+type CommentWrite = components['schemas']['Comment-comment.write']
+
+/**
+ * ⚠️ Contract bug worth reporting to the backend.
+ *
+ * `Comment-comment.write.parent` is generated as a **nested write object**
+ * (`Comment-comment.write | null`) instead of an `iri-reference`, unlike every
+ * other relation in the contract (`user`, `anime`, `manga` are all
+ * `format: iri-reference`). It is a self-referencing association, and the
+ * OpenAPI factory did not resolve it the same way.
+ *
+ * API Platform's deserialiser accepts an IRI string for that property at
+ * runtime — that is the normal way to post a reply — so we send an IRI and
+ * override the type here rather than build a bogus nested object that the
+ * backend would have to un-nest.
+ */
+type CommentWriteBody = Omit<CommentWrite, 'parent'> & { parent?: string | null }
+type CommentPostBody = NonNullable<
+  paths['/api/comments']['post']['requestBody']
+>['content']['application/ld+json']
+
+/** A comment, flattened, with its replies attached. */
+export type CommentNode = {
+  iri: string
+  id: number | null
+  content: string
+  authorIri: string
+  authorName: string
+  createdAt: string | null
+  parentIri: string | null
+  replies: CommentNode[]
+  /** True while the server has not confirmed the creation yet. */
+  pending?: boolean
+}
+
+function toNode(comment: Comment): CommentNode {
+  return {
+    iri: comment['@id'],
+    id: comment.id ?? idFromIri(comment['@id']),
+    content: comment.content,
+    authorIri: comment.user['@id'],
+    authorName: comment.user.username || 'Utilisateur',
+    createdAt: comment.createdAt ?? null,
+    parentIri: comment.parent?.['@id'] ?? null,
+    replies: [],
+  }
+}
+
+/** Rebuilds the two-level thread from the flat collection. */
+function buildThread(comments: Comment[]): CommentNode[] {
+  const nodes = comments.map(toNode)
+  const byIri = new Map(nodes.map((node) => [node.iri, node]))
+  const roots: CommentNode[] = []
+
+  for (const node of nodes) {
+    const parent = node.parentIri ? byIri.get(node.parentIri) : undefined
+    if (parent) parent.replies.push(node)
+    // An orphan reply (parent outside this media, or deleted) is promoted to a
+    // root rather than silently dropped — losing a user's message is worse
+    // than showing it slightly out of place.
+    else roots.push(node)
+  }
+
+  const byDateAsc = (a: CommentNode, b: CommentNode) =>
+    (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
+
+  for (const node of nodes) node.replies.sort(byDateAsc)
+  // Newest conversations first, but replies chronological inside a thread.
+  return roots.sort((a, b) => -byDateAsc(a, b))
+}
+
+export function commentsQueryKey(targetIri: string | undefined) {
+  return ['comments', targetIri] as const
+}
+
+export function useComments(kind: MediaKind, targetIri: string | undefined) {
+  const query = useQuery<CommentNode[]>({
+    queryKey: commentsQueryKey(targetIri),
+    enabled: Boolean(targetIri),
+    queryFn: async () => {
+      const result = await apiClient.GET('/api/comments', {
+        params: {
+          query: {
+            ...(kind === 'anime' ? { anime: targetIri } : { manga: targetIri }),
+            itemsPerPage: 100,
+            'order[createdAt]': 'desc',
+          },
+        },
+      })
+      return buildThread(normalizeCollection(unwrap(result)).member)
+    },
+  })
+
+  return { ...query, comments: query.data ?? [] }
+}
+
+export type AddCommentInput = {
+  kind: MediaKind
+  targetIri: string
+  content: string
+  /** IRI of the comment being replied to, when this is a reply. */
+  parentIri?: string | null
+}
+
+export function useAddComment() {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (input: AddCommentInput) => {
+      if (!user) throw new Error('Connectez-vous pour commenter.')
+
+      const body: CommentWriteBody = {
+        user: user.iri,
+        content: input.content,
+        ...(input.kind === 'anime' ? { anime: input.targetIri } : { manga: input.targetIri }),
+        ...(input.parentIri ? { parent: input.parentIri } : {}),
+      }
+
+      const result = await apiClient.POST('/api/comments', {
+        // See `CommentWriteBody`: IRI instead of the contract's nested object.
+        body: body as CommentPostBody,
+      })
+      return unwrap(result)
+    },
+    onSuccess: (_data, input) => {
+      void queryClient.invalidateQueries({ queryKey: commentsQueryKey(input.targetIri) })
+    },
+  })
+}
+
+export function useDeleteComment(targetIri: string | undefined) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (comment: CommentNode) => {
+      if (comment.id === null) throw new Error('Commentaire non enregistré.')
+      const result = await apiClient.DELETE('/api/comments/{id}', {
+        params: { path: { id: String(comment.id) } },
+      })
+      // 204 No Content — nothing to unwrap, only the error to surface.
+      if (result.error) {
+        const detail =
+          typeof result.error === 'object' && result.error !== null && 'detail' in result.error
+            ? String((result.error as { detail: unknown }).detail)
+            : `Suppression impossible (${result.response.status})`
+        throw new Error(detail)
+      }
+    },
+
+    // Optimistic removal, with the whole thread snapshotted for rollback.
+    onMutate: async (comment: CommentNode) => {
+      const key = commentsQueryKey(targetIri)
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData<CommentNode[]>(key) ?? []
+
+      const prune = (nodes: CommentNode[]): CommentNode[] =>
+        nodes
+          .filter((node) => node.iri !== comment.iri)
+          .map((node) => ({ ...node, replies: prune(node.replies) }))
+
+      queryClient.setQueryData(key, prune(previous))
+      return { previous }
+    },
+
+    onError: (_error, _comment, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(commentsQueryKey(targetIri), context.previous)
+      }
+    },
+
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: commentsQueryKey(targetIri) })
+    },
+  })
+}
