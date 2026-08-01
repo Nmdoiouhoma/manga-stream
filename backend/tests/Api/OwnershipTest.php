@@ -109,6 +109,50 @@ final class OwnershipTest extends ApiTestCase
         self::assertJsonContains(['user' => ['id' => $bob->getId()]]);
     }
 
+    /**
+     * Le doublon doit remonter en 422 explicite, jamais en 500 exposant le SQL :
+     * le client recevait « SQLSTATE[23505] ... uniq_favorite_user_anime », soit le
+     * nom des tables et des index de la base.
+     */
+    public function testDuplicateFavoriteIsRejectedCleanly(): void
+    {
+        $alice = $this->createUser('alice@example.com', 'alice');
+        $anime = $this->createAnime('Ping Pong the Animation');
+        $payload = [
+            'headers' => ['Content-Type' => 'application/ld+json'],
+            'json' => ['anime' => '/api/animes/'.$anime->getId()],
+        ];
+
+        $this->client($this->tokenFor($alice))->request('POST', '/api/favorites', $payload);
+        self::assertResponseStatusCodeSame(201);
+
+        $this->client($this->tokenFor($alice))->request('POST', '/api/favorites', $payload);
+        self::assertResponseStatusCodeSame(422);
+
+        $body = (string) self::getClient()->getResponse()->getContent();
+        self::assertStringNotContainsString('SQLSTATE', $body, 'Aucun détail SQL ne doit fuiter.');
+        self::assertStringNotContainsString('uniq_favorite', $body);
+        self::assertStringContainsString('déjà dans vos favoris', $body);
+    }
+
+    /**
+     * Le propriétaire étant imposé côté serveur, le client n'a pas à envoyer `user` —
+     * l'omettre ne doit pas déclencher un 422 sur un champ qu'il ne contrôle pas.
+     */
+    public function testOwnerMayBeOmittedFromThePayload(): void
+    {
+        $alice = $this->createUser('alice@example.com', 'alice');
+        $anime = $this->createAnime('Dennou Coil');
+
+        $this->client($this->tokenFor($alice))->request('POST', '/api/favorites', [
+            'headers' => ['Content-Type' => 'application/ld+json'],
+            'json' => ['anime' => '/api/animes/'.$anime->getId()],
+        ]);
+
+        self::assertResponseStatusCodeSame(201);
+        self::assertJsonContains(['user' => ['id' => $alice->getId()]]);
+    }
+
     public function testProgressIsScopedToItsOwner(): void
     {
         $alice = $this->createUser('alice@example.com', 'alice');

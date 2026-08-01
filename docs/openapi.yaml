@@ -7514,6 +7514,12 @@ components:
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -7545,6 +7551,12 @@ components:
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -8239,6 +8251,12 @@ components:
       description: "Favori d'un utilisateur, ciblant soit un anime, soit un manga."
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -8259,6 +8277,12 @@ components:
       description: "Favori d'un utilisateur, ciblant soit un anime, soit un manga."
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -9784,6 +9808,12 @@ components:
       description: 'Notification utilisateur.'
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -9812,6 +9842,12 @@ components:
       description: 'Notification utilisateur.'
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -10004,6 +10040,12 @@ components:
       description: "Suivi de visionnage/lecture d'un utilisateur."
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -10052,6 +10094,12 @@ components:
       description: "Suivi de visionnage/lecture d'un utilisateur."
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -10274,6 +10322,12 @@ components:
       description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'
@@ -10311,6 +10365,12 @@ components:
       description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
       properties:
         user:
+          description: |-
+            Propriétaire de la ressource. Volontairement sans `Assert\NotNull` : il est
+            imposé par {@see \App\State\UserOwnedProcessor} à partir du jeton, APRÈS la
+            validation. Le rendre obligatoire ici obligerait le client à envoyer une valeur
+            de toute façon écrasée, et lui renverrait un 422 déroutant s'il l'omet. La
+            colonne reste NOT NULL en base : l'intégrité est garantie là où il faut.
           type: string
           format: iri-reference
           example: 'https://example.com/'

@@ -17,6 +17,7 @@ use ApiPlatform\Metadata\Post;
 use App\Repository\FavoriteRepository;
 use App\Validator\ExactlyOneMediaTarget;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -28,6 +29,13 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\UniqueConstraint(name: 'uniq_favorite_user_anime', columns: ['user_id', 'anime_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_favorite_user_manga', columns: ['user_id', 'manga_id'])]
 #[ExactlyOneMediaTarget]
+// Un même utilisateur ne met une œuvre en favori qu'une fois. Sans ces
+// contraintes, le doublon n'était intercepté que par l'index unique en base,
+// qui remonte en HTTP 500 avec le SQL en clair au lieu d'un 422 explicite.
+// `ignoreNull` (actif par défaut) neutralise la règle côté manga quand c'est
+// un favori d'anime, et inversement.
+#[UniqueEntity(fields: ['user', 'anime'], message: 'Cet anime est déjà dans vos favoris.')]
+#[UniqueEntity(fields: ['user', 'manga'], message: 'Ce manga est déjà dans vos favoris.')]
 #[ApiResource(
     shortName: 'Favorite',
     description: 'Favori d\'un utilisateur, ciblant soit un anime, soit un manga.',

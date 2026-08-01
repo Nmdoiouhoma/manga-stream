@@ -20,6 +20,7 @@ use App\Enum\ProgressStatus;
 use App\Repository\ProgressRepository;
 use App\Validator\ExactlyOneMediaTarget;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -33,6 +34,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Index(name: 'idx_progress_status', columns: ['status'])]
 #[ORM\HasLifecycleCallbacks]
 #[ExactlyOneMediaTarget]
+// Une seule progression par utilisateur et par œuvre (cf. index uniques).
+#[UniqueEntity(fields: ['user', 'anime'], message: 'Vous suivez déjà cet anime.')]
+#[UniqueEntity(fields: ['user', 'manga'], message: 'Vous suivez déjà ce manga.')]
 #[ApiResource(
     shortName: 'Progress',
     description: 'Suivi de visionnage/lecture d\'un utilisateur.',
