@@ -76,10 +76,6 @@ export function getSession(): Session | null {
   return current
 }
 
-export function getToken(): string | null {
-  return current?.token ?? null
-}
-
 /** Replaces the session and notifies every subscriber. `null` logs out. */
 export function setSession(session: Session | null): void {
   current = session

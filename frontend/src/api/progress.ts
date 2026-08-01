@@ -11,8 +11,9 @@
  *
  * `currentEpisode` is a plain integer — no such dance.
  *
- * Scoping note, same as favourites: `?user=<iri>` is sent explicitly until the
- * backend restricts the collection to the current user.
+ * Scoping note: same as favourites — the collection is already restricted to the
+ * authenticated user server-side; `?user=<iri>` is sent because the contract
+ * documents it, using the canonical `/api/users/{id}` IRI.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient, unwrap } from './client'

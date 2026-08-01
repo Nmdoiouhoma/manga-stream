@@ -7,12 +7,15 @@
  * target — id, titles, cover — which is exactly what a card needs, so the
  * favourites page renders without a second round-trip per entry.
  *
- * Scoping: today `/api/favorites` returns everybody's favourites, so we filter
- * with `?user=<iri>`. The backend is going to restrict the collection to the
- * current user; when it does, the extra parameter becomes a harmless no-op and
- * nothing here needs to change.
+ * Scoping: the backend now restricts the collection to the authenticated user
+ * (anonymous ⇒ 401, verified 2026-08-01) *and* overrides `user` server-side on
+ * write. `?user=<iri>` is still sent — it is what the contract documents, it
+ * costs nothing, and it keeps the query honest if the server-side scoping is
+ * ever relaxed. It does require the **canonical** user IRI, not `/api/me`; see
+ * `canonicalUserIri` in `api/auth.ts`.
  */
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient, unwrap } from './client'
 import { normalizeCollection } from './hydra'
 import { useAuth } from '../auth/useAuth'
@@ -95,10 +98,17 @@ export function useFavorites() {
   return { ...query, entries: query.data ?? [] }
 }
 
-/** Fast "is this favourited?" lookup, keyed by target IRI. */
+/**
+ * Fast "is this favourited?" lookup, keyed by target IRI.
+ *
+ * Every card mounts a `FavoriteButton`, so this runs ~30 times per catalogue
+ * page. React Query dedupes the *request* (one query key), but the Map would
+ * still be rebuilt on every render of every card — hence the memo, keyed on the
+ * entries array identity, which only changes when the cache does.
+ */
 export function useFavoriteIndex(): Map<string, FavoriteEntry> {
   const { entries } = useFavorites()
-  return new Map(entries.map((entry) => [entry.targetIri, entry]))
+  return useMemo(() => new Map(entries.map((entry) => [entry.targetIri, entry])), [entries])
 }
 
 type ToggleInput = {
@@ -199,9 +209,4 @@ function asError(result: { error?: unknown; response: Response }): Error {
       ? String((result.error as { detail: unknown }).detail)
       : `Échec de la requête (${result.response.status})`
   return new Error(detail)
-}
-
-/** Drops every favourite-related cache entry. Used on logout. */
-export function clearFavoritesCache(queryClient: QueryClient) {
-  queryClient.removeQueries({ queryKey: ['favorites'] })
 }
