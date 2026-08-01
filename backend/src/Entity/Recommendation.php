@@ -16,6 +16,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use App\Repository\RecommendationRepository;
+use App\State\RecommendationCollectionProvider;
 use App\Validator\ExactlyOneMediaTarget;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Attribute\Groups;
@@ -24,8 +25,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * Recommandation générée pour un utilisateur.
  *
- * En phase 1 les enregistrements sont créés manuellement via l'API ;
- * le moteur de recommandation arrivera en phase 2.
+ * `GET /api/recommendations` déclenche au besoin un recalcul par
+ * {@see \App\Service\Recommendation\RecommendationEngine} (recouvrement de genres
+ * entre les favoris et le catalogue) et ne renvoie que les recommandations de
+ * l'utilisateur courant. `reason` porte l'explication du rapprochement.
  */
 #[ORM\Entity(repositoryClass: RecommendationRepository::class)]
 #[ORM\Table(name: 'recommendation')]
@@ -35,7 +38,11 @@ use Symfony\Component\Validator\Constraints as Assert;
     shortName: 'Recommendation',
     description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.',
     operations: [
-        new GetCollection(security: "is_granted('ROLE_USER')"),
+        new GetCollection(
+            security: "is_granted('ROLE_USER')",
+            provider: RecommendationCollectionProvider::class,
+            description: 'Recommandations de l\'utilisateur courant, recalculées si elles sont périmées.',
+        ),
         new Get(
             normalizationContext: ['groups' => ['recommendation:read', 'recommendation:item:read']],
             security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Cette ressource appartient à un autre utilisateur.',
