@@ -17,6 +17,7 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Enum\MediaStatus;
+use App\Filter\CombinedTitleFilter;
 use App\Repository\MangaRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -53,6 +54,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'genres' => 'exact',
     'genres.slug' => 'exact',
 ])]
+#[ApiFilter(CombinedTitleFilter::class)]
 #[ApiFilter(RangeFilter::class, properties: ['averageScore', 'chapterCount', 'volumeCount'])]
 #[ApiFilter(ExistsFilter::class, properties: ['bannerImage', 'anilistId'])]
 #[ApiFilter(OrderFilter::class, properties: ['titleRomaji', 'averageScore', 'chapterCount', 'createdAt'])]

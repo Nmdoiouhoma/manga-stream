@@ -18,6 +18,7 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Enum\AnimeSeason;
 use App\Enum\MediaStatus;
+use App\Filter\CombinedTitleFilter;
 use App\Repository\AnimeRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -57,6 +58,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     'genres' => 'exact',
     'genres.slug' => 'exact',
 ])]
+#[ApiFilter(CombinedTitleFilter::class)]
 #[ApiFilter(RangeFilter::class, properties: ['averageScore', 'episodeCount', 'seasonYear'])]
 #[ApiFilter(ExistsFilter::class, properties: ['bannerImage', 'anilistId'])]
 #[ApiFilter(OrderFilter::class, properties: ['titleRomaji', 'averageScore', 'seasonYear', 'startDate', 'createdAt'])]
