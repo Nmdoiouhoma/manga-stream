@@ -106,17 +106,41 @@ export class ApiError extends Error {
 }
 
 /**
+ * Turns an API Platform `detail` into something safe to put in front of a user.
+ *
+ * The backend leaks raw Doctrine/PostgreSQL errors on some failures — a
+ * duplicate favourite currently answers **500** with the full
+ * `SQLSTATE[23505] … duplicate key value violates unique constraint` message
+ * and a stack trace (observed against the running backend, reported upstream).
+ * Rendering that verbatim would be both unreadable and an information leak, so
+ * the known cases are translated and anything else DB-shaped is genericised.
+ * The original stays in the console for whoever is debugging.
+ */
+function humanizeDetail(detail: string, status: number): string {
+  if (/duplicate key|unique constraint|already exists/i.test(detail)) {
+    return 'Cet élément existe déjà.'
+  }
+  if (/SQLSTATE|An exception occurred while executing/i.test(detail)) {
+    console.warn('[api] Erreur base de données renvoyée telle quelle par le backend :', detail)
+    return `Le serveur a rencontré une erreur (${status}).`
+  }
+  // Long details are almost always stack traces or dumps, not user-facing prose.
+  return detail.length > 300 ? `Le serveur a rencontré une erreur (${status}).` : detail
+}
+
+/**
  * Unwraps an `openapi-fetch` result, throwing on error so React Query can
  * handle failures through its normal error state. API Platform returns RFC 7807
  * style errors, whose human-readable field is `detail`.
  */
 export function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
   if (result.error || result.data === undefined) {
-    const detail =
+    const { status } = result.response
+    const raw =
       typeof result.error === 'object' && result.error !== null && 'detail' in result.error
         ? String((result.error as { detail: unknown }).detail)
-        : `Request failed with status ${result.response.status}`
-    throw new ApiError(detail, result.response.status)
+        : null
+    throw new ApiError(raw ? humanizeDetail(raw, status) : `La requête a échoué (${status}).`, status)
   }
   return result.data
 }

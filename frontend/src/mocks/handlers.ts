@@ -296,7 +296,16 @@ export const handlers = [
     await delay(120)
     const user = authenticate(request)
     if (!user) return unauthorized()
-    return HttpResponse.json({ '@context': '/api/contexts/User', ...user }, { headers: LD_JSON })
+
+    // ⚠️ Faithfully reproduces a real-backend quirk: `/api/me` is a custom
+    // operation, so API Platform serialises `"@id": "/api/me"` — the operation
+    // IRI, **not** `/api/users/{id}`. The front rebuilds the resource IRI from
+    // `id` (see `canonicalUserIri` in `src/api/auth.ts`); returning the "nice"
+    // IRI here would make the mocks kinder than reality and hide the bug.
+    return HttpResponse.json(
+      { '@context': '/api/contexts/User', ...user, '@id': '/api/me' },
+      { headers: LD_JSON },
+    )
   }),
 
   /* ── Catalogue ────────────────────────────────────────────────────────── */
@@ -403,6 +412,12 @@ export const handlers = [
     if (!target) return problem(422, `Ressource inconnue : ${targetIri}`)
 
     // The real entity carries a unique constraint on (user, anime|manga).
+    //
+    // Divergence, on purpose: the real backend currently lets the constraint
+    // violation escape as a **500** with a raw `SQLSTATE[23505]` message and a
+    // stack trace (observed 2026-08-01, reported upstream). We answer the 422
+    // it *should* be. `unwrap`'s `humanizeDetail` copes with both, so the UI is
+    // exercised against the correct behaviour without going blind to the bug.
     const duplicate = favorites.find(
       (favorite) =>
         favorite.user['@id'] === user['@id'] &&

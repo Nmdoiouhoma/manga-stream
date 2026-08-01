@@ -25,9 +25,29 @@ type User =
   | components['schemas']['User.jsonld-user.read']
   | components['schemas']['User.jsonld-user.read_user.item.read']
 
+/**
+ * The user's **resource** IRI, `/api/users/{id}`.
+ *
+ * ⚠️ Not simply `user['@id']`. `GET /api/me` is a custom operation and API
+ * Platform answers it with `"@id": "/api/me"` — the *operation* IRI, not the
+ * resource one. Verified against the running backend on 2026-08-01.
+ *
+ * That distinction is not cosmetic: this IRI is what `Favorite.user`,
+ * `Progress.user` and `Comment.user` reference, and what the `?user=` filters
+ * are matched against. Sending `/api/me` there happens to be tolerated today
+ * (the backend overrides `user` server-side and API Platform silently drops an
+ * unresolvable filter value), but it is wrong, and it would break the moment
+ * either of those behaviours changed.
+ */
+function canonicalUserIri(user: User): string {
+  const iri = user['@id']
+  if (/\/users\/[^/]+$/.test(iri)) return iri
+  return user.id != null ? `/api/users/${user.id}` : iri
+}
+
 function toSessionUser(user: User): SessionUser {
   return {
-    iri: user['@id'],
+    iri: canonicalUserIri(user),
     id: user.id ?? null,
     username: user.username,
     email: user.email,

@@ -146,6 +146,10 @@ export function mangaToMediaItem(manga: Manga): MediaItem {
   const id = manga.id ?? idFromIri(iri)
   const { title, subtitle } = pickTitle(manga)
 
+  // Mangas have no season; the publication start year is the closest analogue
+  // to the anime cards' "Automne 2023". Available since the AniList sync.
+  const startYear = manga.startDate ? new Date(manga.startDate).getUTCFullYear() : null
+
   return {
     key: `manga-${iri}`,
     iri,
@@ -157,7 +161,7 @@ export function mangaToMediaItem(manga: Manga): MediaItem {
     coverImage: manga.coverImage ?? null,
     averageScore: manga.averageScore ?? null,
     status: manga.status ?? null,
-    releaseLabel: null,
+    releaseLabel: startYear !== null && Number.isFinite(startYear) ? String(startYear) : null,
     genres: manga.genres ?? [],
     countLabel: manga.volumeCount
       ? `${manga.volumeCount} tomes`
@@ -223,8 +227,10 @@ export function mangaToMediaDetail(manga: MangaDetail): MediaDetail {
     titleEnglish: manga.titleEnglish ?? null,
     titleNative: manga.titleNative ?? null,
     bannerImage: manga.bannerImage ?? null,
-    startDate: null,
-    endDate: null,
+    // `startDate` / `endDate` landed on Manga with the 2026-08-01 contract
+    // regeneration (filled by the AniList sync); they used to be anime-only.
+    startDate: manga.startDate ?? null,
+    endDate: manga.endDate ?? null,
     episodes: [],
     chapters: [...(manga.chapters ?? [])].sort(
       (a, b) => parseDecimal(a.number) - parseDecimal(b.number),
