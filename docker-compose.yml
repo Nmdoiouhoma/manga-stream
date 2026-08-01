@@ -232,6 +232,11 @@ services:
       # Vite only exposes variables prefixed with VITE_ to the browser bundle.
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
       VITE_MERCURE_URL: ${VITE_MERCURE_URL:-http://localhost:3000/.well-known/mercure}
+      # Optional override of the subscribed topics (comma separated). Left
+      # empty, the frontend falls back to its own defaults (see
+      # frontend/src/config.ts). Passed through so the knob is actually usable
+      # from .env instead of being silently dropped by compose.
+      VITE_MERCURE_TOPICS: ${VITE_MERCURE_TOPICS:-}
       VITE_USE_MOCKS: ${VITE_USE_MOCKS:-false}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
