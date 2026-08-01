@@ -36,6 +36,8 @@ id_rsa.pub
 /backend/config/secrets/prod/prod.decrypt.private.php
 /backend/public/bundles/
 /backend/.phpunit.result.cache
+# PHPUnit 10+ : cacheDirectory de backend/phpunit.dist.xml
+/backend/.phpunit.cache/
 /backend/.php-cs-fixer.cache
 /backend/.phpstan.cache/
 /backend/phpstan.neon
