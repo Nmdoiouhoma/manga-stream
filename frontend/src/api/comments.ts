@@ -17,51 +17,29 @@ import { apiClient, unwrap } from './client'
 import { normalizeCollection } from './hydra'
 import { useAuth } from '../auth/useAuth'
 import { idFromIri, type MediaKind } from '../types/media'
-import type { components, paths } from './schema'
+import type { components } from './schema'
 
 type Comment = components['schemas']['Comment.jsonld-comment.read']
 type CommentWrite = components['schemas']['Comment-comment.write']
 
 /**
- * ⚠️ Écart de contrat, corrigé côté backend mais **pas encore régénéré**.
+ * Corps d'écriture d'un commentaire.
  *
- * `Comment.parent` est décrit — en lecture comme en écriture — par un objet
+ * ── Contournement retiré ──────────────────────────────────────────────────
+ * `Comment.parent` était décrit — en lecture comme en écriture — par un objet
  * `Comment` imbriqué au lieu d'une `iri-reference`, contrairement à toutes les
- * autres relations (`user`, `anime`, `manga` sont en `format: iri-reference`).
- * L'association est récursive et la fabrique OpenAPI en déduisait un lien
- * embarqué.
+ * autres relations. L'association étant récursive, API Platform en déduisait
+ * un lien embarqué. Le front devait donc réécrire le type à la main pour
+ * envoyer une IRI, et lisait `parent['@id']` — ce qui aurait renvoyé
+ * `undefined` sur la chaîne réellement servie, orphelinant chaque réponse et
+ * aplatissant le fil en liste de racines.
  *
- * Le backend l'a corrigé le 2026-08-02 (`readableLink`/`writableLink` à
- * `false`) et l'API renvoie bien une IRI — vérifié :
- * `"parent": "/api/comments/11"`. Mais `docs/openapi.yaml` n'a pas encore été
- * régénéré, donc le type généré ment toujours dans les deux sens.
- *
- * Conséquence concrète, et c'est pour ça que ce n'est pas cosmétique : lire
- * `comment.parent?.['@id']` sur une chaîne renvoie `undefined`, chaque réponse
- * devient orpheline et le fil s'aplatit en une liste de racines. D'où
- * `parentIriOf()`, qui accepte les deux formes. À conserver après la
- * régénération : c'est ce qui rend la lecture indifférente à la forme servie.
+ * Écart remonté, **corrigé** le 2026-08-02 (`readableLink`/`writableLink` à
+ * `false`) et contrat régénéré : `parent` est maintenant
+ * `string | null` avec `format: iri-reference`, dans les deux sens. Le type
+ * généré est repris tel quel, et `parent` se lit directement.
  */
-type CommentWriteBody = Omit<CommentWrite, 'parent'> & { parent?: string | null }
-
-/**
- * IRI du parent, que l'API la serve en chaîne (forme réelle depuis le
- * 2026-08-02) ou en objet embarqué (forme encore décrite par le contrat).
- */
-function parentIriOf(comment: Comment): string | null {
-  // `unknown` plutôt qu'un cast direct : le type généré affirme un objet, la
-  // réalité est une chaîne, et seule une inspection à l'exécution tranche.
-  const parent: unknown = comment.parent
-  if (typeof parent === 'string') return parent.trim() || null
-  if (typeof parent === 'object' && parent !== null) {
-    const iri = (parent as Record<string, unknown>)['@id']
-    if (typeof iri === 'string') return iri
-  }
-  return null
-}
-type CommentPostBody = NonNullable<
-  paths['/api/comments']['post']['requestBody']
->['content']['application/ld+json']
+type CommentWriteBody = CommentWrite
 
 /** A comment, flattened, with its replies attached. */
 export type CommentNode = {
@@ -91,7 +69,7 @@ function toNode(comment: Comment): CommentNode {
     authorIri: comment.user?.['@id'] ?? null,
     authorName: comment.user?.username || 'Utilisateur',
     createdAt: comment.createdAt ?? null,
-    parentIri: parentIriOf(comment),
+    parentIri: comment.parent ?? null,
     replies: [],
   }
 }
@@ -169,10 +147,7 @@ export function useAddComment() {
         ...(input.parentIri ? { parent: input.parentIri } : {}),
       }
 
-      const result = await apiClient.POST('/api/comments', {
-        // See `CommentWriteBody`: IRI instead of the contract's nested object.
-        body: body as CommentPostBody,
-      })
+      const result = await apiClient.POST('/api/comments', { body })
       return unwrap(result)
     },
     onSuccess: (_data, input) => {

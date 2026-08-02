@@ -708,8 +708,8 @@ export const handlers = [
     const target = targetIri ? mediaRefFor(targetIri) : null
     if (!target) return problem(422, 'anime ou manga est requis.')
 
-    // `parent` arrives as an IRI even though the contract types it as a nested
-    // write object — see the note in `src/api/comments.ts`.
+    // `parent` est une IRI — le contrat le dit enfin depuis la correction du
+    // 2026-08-02 (voir la note dans `src/api/comments.ts`).
     const parentIri = typeof body.parent === 'string' ? body.parent : null
     const parent = parentIri
       ? (comments.find((comment) => comment['@id'] === parentIri) ?? null)
@@ -726,7 +726,8 @@ export const handlers = [
       content,
       anime: target.kind === 'anime' ? mediaRef : null,
       manga: target.kind === 'manga' ? mediaRef : null,
-      parent: parent ? { '@id': parent['@id'], '@type': 'Comment', id: parent.id } : null,
+      // IRI et non objet imbriqué : c'est ce que sert le vrai backend.
+      parent: parent ? parent['@id'] : null,
       createdAt: new Date().toISOString(),
     } as unknown as MockComment
 
@@ -750,7 +751,7 @@ export const handlers = [
     comments.splice(index, 1)
     // Cascade: the real schema deletes replies along with their parent.
     for (let i = comments.length - 1; i >= 0; i--) {
-      if (comments[i].parent?.['@id'] === removed['@id']) comments.splice(i, 1)
+      if (comments[i].parent === removed['@id']) comments.splice(i, 1)
     }
 
     return new HttpResponse(null, { status: 204 })

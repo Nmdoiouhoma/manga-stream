@@ -89,32 +89,39 @@ export async function login({ email, password }: Credentials): Promise<Session> 
   })
 
   // ⚠️ The contract declares a `200` response for this operation and nothing
-  // else — no 401, no 400. `openapi-fetch` therefore types `result.error` as
-  // `never`, and testing it would narrow the whole result away. The status is
-  // read straight off the `Response` instead. Still true on the 2026-08-02
-  // contract (re-checked): the workaround stays until the backend documents
-  // the failure responses.
+  // else — no 401, no 400 — so `openapi-fetch` typed `result.error` as `never`
+  // and the front had to read the status off the raw `Response`. Écart remonté
+  // et **corrigé** le 2026-08-02 : l'opération documente maintenant le 401
+  // (corps lexik `{code, message}`) et le 400 (RFC 7807). `result.error` est
+  // enfin exploitable, et le contournement est retiré.
   const { status } = result.response
-  const token = result.data?.token
 
-  if (!token) {
-    // A 401 here is a wrong password, not an expired session. The middleware
-    // deliberately ignores it (the request carries no Authorization header),
-    // so translating it is this function's job.
+  if (result.error) {
+    // Un 401 ici est un mot de passe faux, pas une session expirée. Le
+    // middleware l'ignore délibérément (la requête ne porte aucun en-tête
+    // `Authorization`) : traduire l'erreur revient donc à cette fonction.
     if (status === 401) throw new ApiError('Identifiants invalides.', 401)
-    if (status >= 200 && status < 300) {
-      throw new ApiError('La réponse de connexion ne contient aucun jeton.', status)
-    }
-    throw new ApiError(`La connexion a échoué (${status}).`, status)
+    // Le 400 est du RFC 7807 et porte un `detail` exploitable ; le 401 est au
+    // format lexik et n'en a pas. Les deux formes sont lues sans supposer
+    // laquelle est arrivée.
+    const detail =
+      'detail' in result.error && typeof result.error.detail === 'string'
+        ? result.error.detail
+        : null
+    throw new ApiError(detail ?? `La connexion a échoué (${status}).`, status)
   }
 
-  // Le backend joint l'abonnement Mercure à la réponse de connexion (clé
-  // `mercure`), ce qui évite un second aller-retour juste pour ouvrir le flux.
-  // Le contrat ne décrit que `{ token }` pour cette opération : la clé est lue
-  // en `unknown` puis validée, et son absence est un cas nominal — le backend
-  // l'omet volontairement si l'émission du jeton échoue, et le flux se
-  // rattrape alors sur `GET /api/mercure/subscription`.
-  const mercure = subscriptionFromLogin(result.data as unknown)
+  const token = result.data?.token
+  if (!token) {
+    throw new ApiError('La réponse de connexion ne contient aucun jeton.', status)
+  }
+
+  // Le backend joint l'abonnement Mercure à la réponse de connexion, ce qui
+  // évite un second aller-retour juste pour ouvrir le flux. Le contrat décrit
+  // désormais la clé et la marque **optionnelle** — le listener l'omet quand
+  // l'émission du jeton échoue, et le flux se rattrape alors tout seul sur
+  // `GET /api/mercure/subscription`.
+  const mercure = subscriptionFromLogin(result.data)
 
   return { token, user: await fetchMe(token), mercure }
 }

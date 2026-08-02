@@ -408,6 +408,26 @@ export interface paths {
         patch: operations["api_mangas_id_patch"];
         trace?: never;
     };
+    "/api/mercure/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Abonnement Mercure de l'utilisateur authentifié.
+         * @description Abonnement Mercure de l'utilisateur authentifié.
+         */
+        get: operations["api_mercuresubscription_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications": {
         parameters: {
             query?: never;
@@ -686,6 +706,8 @@ export interface components {
             episodeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /** @enum {string|null} */
@@ -718,6 +740,8 @@ export interface components {
             episodeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /** @enum {string|null} */
@@ -750,6 +774,8 @@ export interface components {
             episodeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /** @enum {string|null} */
@@ -777,6 +803,8 @@ export interface components {
             episodeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /** @enum {string|null} */
@@ -871,6 +899,8 @@ export interface components {
             episodeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /** @enum {string|null} */
@@ -903,6 +933,8 @@ export interface components {
             episodeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /** @enum {string|null} */
@@ -1134,7 +1166,12 @@ export interface components {
             content: string;
             anime?: components["schemas"]["Anime-comment.read"] | null;
             manga?: components["schemas"]["Manga-comment.read"] | null;
-            parent?: components["schemas"]["Comment-comment.read"] | null;
+            /**
+             * Format: iri-reference
+             * @description Commentaire parent lorsque celui-ci est une réponse.
+             * @example https://example.com/
+             */
+            parent?: string | null;
             /** Format: date-time */
             createdAt?: string;
         };
@@ -1146,7 +1183,12 @@ export interface components {
             content: string;
             anime?: components["schemas"]["Anime-comment.read_comment.item.read"] | null;
             manga?: components["schemas"]["Manga-comment.read_comment.item.read"] | null;
-            parent?: components["schemas"]["Comment-comment.read_comment.item.read"] | null;
+            /**
+             * Format: iri-reference
+             * @description Commentaire parent lorsque celui-ci est une réponse.
+             * @example https://example.com/
+             */
+            parent?: string | null;
             replies?: components["schemas"]["Comment-comment.read_comment.item.read"][];
             /** Format: date-time */
             createdAt?: string;
@@ -1174,7 +1216,12 @@ export interface components {
              * @example https://example.com/
              */
             manga?: string | null;
-            parent?: components["schemas"]["Comment-comment.write"] | null;
+            /**
+             * Format: iri-reference
+             * @description Commentaire parent lorsque celui-ci est une réponse.
+             * @example https://example.com/
+             */
+            parent?: string | null;
         };
         /** @description Commentaire utilisateur (fil de discussion à un niveau de réponse). */
         "Comment-comment.write.jsonMergePatch": {
@@ -1199,24 +1246,32 @@ export interface components {
              * @example https://example.com/
              */
             manga?: string | null;
-            parent?: components["schemas"]["Comment-comment.write"] | null;
+            /**
+             * Format: iri-reference
+             * @description Commentaire parent lorsque celui-ci est une réponse.
+             * @example https://example.com/
+             */
+            parent?: string | null;
         };
         /** @description Commentaire utilisateur (fil de discussion à un niveau de réponse). */
-        "Comment.jsonld-comment.read": {
-            parent?: components["schemas"]["Comment.jsonld-comment.read"] | null;
-            /** Format: date-time */
-            createdAt?: string;
-        } & (components["schemas"]["HydraItemBaseSchema"] & {
+        "Comment.jsonld-comment.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
             user?: components["schemas"]["User.jsonld-comment.read"];
             /** @default  */
             content: string;
             anime?: components["schemas"]["Anime.jsonld-comment.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-comment.read"] | null;
-        });
+            /**
+             * Format: iri-reference
+             * @description Commentaire parent lorsque celui-ci est une réponse.
+             * @example https://example.com/
+             */
+            parent?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+        };
         /** @description Commentaire utilisateur (fil de discussion à un niveau de réponse). */
         "Comment.jsonld-comment.read_comment.item.read": {
-            parent?: components["schemas"]["Comment.jsonld-comment.read_comment.item.read"] | null;
             replies?: components["schemas"]["Comment.jsonld-comment.read_comment.item.read"][];
             /** Format: date-time */
             createdAt?: string;
@@ -1227,6 +1282,12 @@ export interface components {
             content: string;
             anime?: components["schemas"]["Anime.jsonld-comment.read_comment.item.read"] | null;
             manga?: components["schemas"]["Manga.jsonld-comment.read_comment.item.read"] | null;
+            /**
+             * Format: iri-reference
+             * @description Commentaire parent lorsque celui-ci est une réponse.
+             * @example https://example.com/
+             */
+            parent?: string | null;
         });
         /** @description Unprocessable entity */
         ConstraintViolation: {
@@ -1728,6 +1789,8 @@ export interface components {
             volumeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /**
@@ -1760,6 +1823,8 @@ export interface components {
             volumeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /**
@@ -1792,6 +1857,8 @@ export interface components {
             volumeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /**
@@ -1819,6 +1886,8 @@ export interface components {
             volumeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /**
@@ -1919,6 +1988,8 @@ export interface components {
             volumeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /**
@@ -1951,6 +2022,8 @@ export interface components {
             volumeCount?: number | null;
             /** @description Score moyen sur 100 (convention AniList). */
             averageScore?: number | null;
+            /** @description Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes. */
+            popularity?: number | null;
             /** @enum {string|null} */
             status?: "FINISHED" | "RELEASING" | "NOT_YET_RELEASED" | "CANCELLED" | "HIATUS" | null;
             /**
@@ -2004,6 +2077,36 @@ export interface components {
             titleEnglish?: string | null;
             /** Format: uri */
             coverImage?: string | null;
+        };
+        /** @description Jeton d'abonnement Mercure, limité au topic personnel du porteur. */
+        "MercureSubscription-mercure.read": {
+            /**
+             * @description URL publique du hub, telle qu'un navigateur peut la joindre.
+             * @example http://localhost:3000/.well-known/mercure
+             */
+            hubUrl?: string;
+            /**
+             * @description Unique topic auquel ce jeton donne accès.
+             * @example /api/users/42/notifications
+             */
+            topic?: string;
+            /** @description JWT abonné signé par le backend (HS256, secret partagé avec le hub). */
+            token?: string;
+        };
+        /** @description Jeton d'abonnement Mercure, limité au topic personnel du porteur. */
+        "MercureSubscription.jsonld-mercure.read": components["schemas"]["HydraItemBaseSchema"] & {
+            /**
+             * @description URL publique du hub, telle qu'un navigateur peut la joindre.
+             * @example http://localhost:3000/.well-known/mercure
+             */
+            hubUrl?: string;
+            /**
+             * @description Unique topic auquel ce jeton donne accès.
+             * @example /api/users/42/notifications
+             */
+            topic?: string;
+            /** @description JWT abonné signé par le backend (HS256, secret partagé avec le hub). */
+            token?: string;
         };
         /** @description Notification utilisateur. */
         "Notification-notification.read": {
@@ -4552,14 +4655,56 @@ export interface operations {
             };
         };
         responses: {
-            /** @description User token created */
+            /** @description Jeton créé. `mercure` porte de quoi ouvrir immédiatement le flux temps réel. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
+                        /** @description JWT d'API, à présenter en `Authorization: Bearer`. */
                         readonly token: string;
+                        /** @description Abonnement Mercure de l'utilisateur. Absent si l'émission du jeton a échoué ; utiliser alors `GET /api/mercure/subscription`. */
+                        mercure?: {
+                            /** @example http://localhost:3000/.well-known/mercure */
+                            hubUrl: string;
+                            /** @example /api/users/42/notifications */
+                            topic: string;
+                            /** @description JWT abonné, `mercure.subscribe` restreint à `topic`. */
+                            token: string;
+                        };
+                    };
+                };
+            };
+            /** @description Requête malformée : JSON illisible, ou clé `email`/`password` absente. Réponse du gestionnaire d'exceptions de Symfony (RFC 7807). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example https://tools.ietf.org/html/rfc2616#section-10 */
+                        type?: string;
+                        /** @example An error occurred */
+                        title?: string;
+                        /** @example 400 */
+                        status?: number;
+                        /** @example The key "password" must be provided. */
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Identifiants invalides. Corps propre à lexik/jwt-authentication-bundle, pas du application/problem+json. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 401 */
+                        code: number;
+                        /** @example Invalid credentials. */
+                        message: string;
                     };
                 };
             };
@@ -4917,6 +5062,49 @@ export interface operations {
                     "application/ld+json": components["schemas"]["ConstraintViolation.jsonld"];
                     "application/problem+json": components["schemas"]["ConstraintViolation"];
                     "application/json": components["schemas"]["ConstraintViolation"];
+                };
+            };
+        };
+    };
+    api_mercuresubscription_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MercureSubscription resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["MercureSubscription.jsonld-mercure.read"];
+                    "application/json": components["schemas"]["MercureSubscription-mercure.read"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

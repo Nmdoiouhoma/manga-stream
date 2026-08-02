@@ -19,17 +19,16 @@
  *     abonné expire indépendamment du JWT d'API, et une session restaurée
  *     depuis le `localStorage` peut porter un jeton Mercure déjà mort.
  *
- * ── Pourquoi un `fetch` brut et pas le client typé ────────────────────────
- * `GET /api/mercure/subscription` **n'est pas encore dans `docs/openapi.yaml`**
- * (contrat daté du 2026-08-02 08:27, la ressource a été ajoutée après).
- * L'appeler via `apiClient` ne compilerait pas : le chemin n'existe pas dans
- * `paths`. Plutôt que d'élargir le type généré à la main — ce qui reviendrait
- * à inventer un contrat — la requête est faite à la main et la réponse est
- * validée champ par champ. À remplacer par `apiClient.GET('/api/mercure/
- * subscription')` dès que le contrat est régénéré ; la validation, elle, peut
- * rester : elle ne coûte rien et protège d'une réponse partielle.
+ * ── Validation, malgré le typage ──────────────────────────────────────────
+ * Les deux sources passent par `parseMercureSubscription`. Pour l'endpoint
+ * dédié, désormais décrit par le contrat (régénéré le 2026-08-02 09:00), le
+ * client typé garantit déjà la forme *à la compilation* — la validation reste
+ * parce qu'un abonnement incomplet doit dégrader proprement plutôt que de
+ * produire une souscription silencieusement cassée. Pour le bloc `mercure` de
+ * la réponse de login, elle est en revanche indispensable : le backend l'omet
+ * volontairement quand l'émission du jeton échoue.
  */
-import { API_BASE_URL } from '../config'
+import { apiClient } from './client'
 import { decodeJwt } from '../auth/session'
 
 /** Tout ce dont le navigateur a besoin pour ouvrir son flux. */
@@ -62,10 +61,10 @@ export function parseMercureSubscription(value: unknown): MercureSubscription | 
 /**
  * Extrait l'abonnement de la réponse de `POST /api/login`.
  *
- * Le contrat ne décrit que `{ token }` pour cette opération : la clé `mercure`
- * est un ajout backend non encore documenté, d'où le passage par `unknown`.
- * Le listener côté backend omet volontairement la clé si l'émission échoue —
- * son absence est donc un cas nominal, pas une erreur.
+ * Le contrat décrit désormais la clé `mercure` comme **optionnelle**, ce qui
+ * est exact : le listener backend l'omet quand l'émission du jeton échoue
+ * (l'échec est journalisé côté serveur et ne doit pas empêcher de se
+ * connecter). Son absence est donc un cas nominal, pas une erreur.
  */
 export function subscriptionFromLogin(payload: unknown): MercureSubscription | null {
   if (typeof payload !== 'object' || payload === null) return null
@@ -77,21 +76,23 @@ export function subscriptionFromLogin(payload: unknown): MercureSubscription | n
  *
  * Ne lève pas : le temps réel est un bonus. Un échec renvoie `null`, l'appelant
  * reste sur le rafraîchissement à la demande, et l'application fonctionne.
+ *
+ * Le jeton est passé explicitement plutôt que laissé au middleware d'auth :
+ * cet appel doit pouvoir échouer en silence, alors que le middleware
+ * transforme un 401 en déconnexion globale. Un jeton Mercure refusé ne doit
+ * pas éjecter l'utilisateur de l'application.
  */
 export async function fetchMercureSubscription(
   apiToken: string,
 ): Promise<MercureSubscription | null> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/mercure/subscription`, {
-      headers: {
-        Accept: 'application/ld+json, application/json',
-        Authorization: `Bearer ${apiToken}`,
-      },
+    const result = await apiClient.GET('/api/mercure/subscription', {
+      headers: { Authorization: `Bearer ${apiToken}` },
     })
-    if (!response.ok) return null
-    return parseMercureSubscription(await response.json())
+    if (result.error || !result.data) return null
+    return parseMercureSubscription(result.data)
   } catch {
-    // Endpoint absent (backend antérieur), réseau coupé, JSON illisible.
+    // Réseau coupé, réponse illisible : le temps réel s'éteint, rien d'autre.
     return null
   }
 }
