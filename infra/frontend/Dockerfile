@@ -92,6 +92,9 @@ RUN npm run build
 FROM nginx:1.27-alpine AS prod
 
 COPY --from=infra nginx/frontend-prod.conf /etc/nginx/conf.d/default.conf
+# Dans snippets/ et pas dans conf.d/ : tout *.conf de conf.d est chargé
+# automatiquement au niveau http, ce n'est pas ce qu'on veut d'un fragment.
+COPY --from=infra nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

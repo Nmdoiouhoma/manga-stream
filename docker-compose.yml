@@ -192,6 +192,11 @@ services:
       - "${BACKEND_PORT:-8000}:80"
     volumes:
       - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Monté sous snippets/ et NON sous conf.d/ : nginx charge d'office
+      # conf.d/*.conf au niveau http, ce qui appliquerait les en-têtes
+      # globalement et hors de tout contrôle. Ici il n'est chargé que par les
+      # `include` explicites des vhosts.
+      - ./infra/nginx/security-headers.conf:/etc/nginx/snippets/security-headers.conf:ro
       # nginx needs the source tree to resolve $realpath_root and serve
       # anything sitting in public/ (uploads, favicon, ...).
       - ./backend:/var/www/html:ro
