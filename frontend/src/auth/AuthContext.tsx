@@ -13,6 +13,7 @@ import {
   subscribe,
   type Session,
 } from './session'
+import { clearSubscriberCookie } from '../api/mercure'
 import { login as loginRequest, register as registerRequest } from '../api/auth'
 import type { Credentials, RegisterInput } from '../api/auth'
 import { AuthContext, type AuthContextValue } from './context'
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () =>
       onUnauthorized(() => {
         setSessionExpired(true)
+        clearSubscriberCookie()
         // Every cached list is user-scoped (favorites, progress, comments,
         // notifications). Dropping the cache prevents the next user — or the
         // anonymous view — from briefly seeing the previous one's data.
@@ -64,6 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setSession(null)
     setSessionExpired(false)
+    // Le jeton abonné Mercure est un jeton porteur : le laisser dans un cookie
+    // après la déconnexion permettrait de continuer à lire le flux du compte
+    // qui vient de partir.
+    clearSubscriberCookie()
     queryClient.clear()
   }, [queryClient])
 

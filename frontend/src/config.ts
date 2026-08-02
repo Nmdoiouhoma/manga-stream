@@ -47,29 +47,36 @@ export const MERCURE_URL = (import.meta.env.VITE_MERCURE_URL ?? '').trim()
  * ── Every topic here MUST be user-scoped ──────────────────────────────────
  * Phase 2 also subscribed to `{origin}/api/notifications/{id}` — API Platform's
  * default per-resource topic, as an RFC 6570 template. That template matches
- * **every** notification of **every** user, and the dev hub runs with the
- * `anonymous` directive (see `docker-compose.yml`), so any browser subscribing
- * to it received other people's notification events. The client-side owner
- * filter in `useNotificationStream` limited the damage but did not prevent the
- * payloads from reaching the tab. It has been **removed**, and nothing that is
- * not scoped by `{userIri}`/`{userId}` may be added back.
+ * **every** notification of **every** user, so any browser subscribing to it
+ * received other people's notification events. It has been **removed**, and
+ * nothing that is not scoped by `{userIri}`/`{userId}` may be added back.
  *
- * ── The convention is still the backend's call ────────────────────────────
- * As of 2026-08-02 the backend publishes **nothing**: `symfony/mercure-bundle`
- * is not installed, no resource carries `mercure: true`, and no `HubInterface`
- * is injected anywhere in `backend/src`. There is therefore no convention to
- * adopt yet — verified by subscribing to `?topic=*` on the hub and triggering
- * a notification/favourite/comment creation: the stream stayed empty.
+ * ── La convention du backend, adoptée ─────────────────────────────────────
+ * Depuis le 2026-08-02 le backend publie pour de vrai et fige sa convention
+ * dans `App\Service\Notification\NotificationTopics` :
  *
- * The defaults below are the two plausible **user-scoped** shapes (absolute,
- * as Mercure recommends, and relative in case IRIs are published as-is). When
- * the backend fixes its convention, set `VITE_MERCURE_TOPICS` to it — the whole
- * thing is one env var, no code change.
+ *     /api/users/{id}/notifications
+ *
+ * Un topic par utilisateur, aucun topic générique, et **toute** publication
+ * part en `private: true` — sans quoi restreindre les abonnements ne
+ * cloisonnerait rien (une update publique est diffusée à tous les abonnés du
+ * topic, quel que soit leur JWT).
+ *
+ * ── Ces valeurs ne sont qu'un filet ───────────────────────────────────────
+ * En marche nominale le topic n'est pas déduit ici : il est **donné par le
+ * backend** avec le jeton abonné (`mercure.topic` de la réponse de login, ou
+ * `GET /api/mercure/subscription`). C'est la seule source qui ne puisse pas
+ * diverger du claim `mercure.subscribe` du jeton. Ce qui suit ne sert que
+ * lorsque aucun abonnement n'a pu être obtenu — hub ouvert aux anonymes, ou
+ * backend antérieur à la fonctionnalité.
  */
 const DEFAULT_MERCURE_TOPICS = [
-  '{origin}{userIri}',
+  // Forme relative : celle que le backend publie réellement (vérifié sur un
+  // événement reçu du hub).
+  '{userIri}/notifications',
+  // Forme absolue, tolérée au cas où le hub serait reconfiguré pour des topics
+  // canoniques absolus, comme Mercure le recommande.
   '{origin}{userIri}/notifications',
-  '{userIri}',
 ].join(',')
 
 const MERCURE_TOPIC_TEMPLATES = (

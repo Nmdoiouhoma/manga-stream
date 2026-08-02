@@ -15,6 +15,7 @@
  * `/api/register`.
  */
 import { apiClient, ApiError, jsonApiClient, unwrap } from './client'
+import { subscriptionFromLogin } from './mercure'
 import type { Session, SessionUser } from '../auth/session'
 import type { components } from './schema'
 
@@ -79,8 +80,9 @@ export async function login({ email, password }: Credentials): Promise<Session> 
   // ⚠️ The contract declares a `200` response for this operation and nothing
   // else — no 401, no 400. `openapi-fetch` therefore types `result.error` as
   // `never`, and testing it would narrow the whole result away. The status is
-  // read straight off the `Response` instead. Worth asking the backend to
-  // document the failure responses.
+  // read straight off the `Response` instead. Still true on the 2026-08-02
+  // contract (re-checked): the workaround stays until the backend documents
+  // the failure responses.
   const { status } = result.response
   const token = result.data?.token
 
@@ -95,7 +97,15 @@ export async function login({ email, password }: Credentials): Promise<Session> 
     throw new ApiError(`La connexion a échoué (${status}).`, status)
   }
 
-  return { token, user: await fetchMe(token) }
+  // Le backend joint l'abonnement Mercure à la réponse de connexion (clé
+  // `mercure`), ce qui évite un second aller-retour juste pour ouvrir le flux.
+  // Le contrat ne décrit que `{ token }` pour cette opération : la clé est lue
+  // en `unknown` puis validée, et son absence est un cas nominal — le backend
+  // l'omet volontairement si l'émission du jeton échoue, et le flux se
+  // rattrape alors sur `GET /api/mercure/subscription`.
+  const mercure = subscriptionFromLogin(result.data as unknown)
+
+  return { token, user: await fetchMe(token), mercure }
 }
 
 /**

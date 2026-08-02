@@ -16,6 +16,8 @@
  * ("Stockage du JWT") for the full write-up.
  */
 
+import type { MercureSubscription } from '../api/mercure'
+
 const STORAGE_KEY = 'manga-stream.session'
 
 /** The authenticated user, as far as the frontend needs to know. */
@@ -31,6 +33,19 @@ export type SessionUser = {
 export type Session = {
   token: string
   user: SessionUser
+  /**
+   * Abonnement Mercure émis par le backend à la connexion (clé `mercure` de la
+   * réponse de `POST /api/login`). Optionnel à dessein : le backend omet la clé
+   * si l'émission échoue, et une session enregistrée avant l'arrivée de cette
+   * fonctionnalité n'en a pas. `useNotificationStream` sait le récupérer seul
+   * via `GET /api/mercure/subscription` — l'absence n'est donc pas une panne.
+   *
+   * Il vit avec la session parce qu'il en partage exactement le cycle de vie :
+   * émis à la connexion, effacé à la déconnexion. Il porte les mêmes risques
+   * que le JWT d'API vis-à-vis du `localStorage` (voir plus haut), en moins
+   * grave : il n'autorise que la lecture d'un flux de notifications.
+   */
+  mercure?: MercureSubscription | null
 }
 
 type Listener = (session: Session | null) => void

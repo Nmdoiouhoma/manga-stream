@@ -799,6 +799,33 @@ export const handlers = [
     )
   }),
 
+  /* ── Mercure ──────────────────────────────────────────────────────────────
+   * Répond 404, volontairement.
+   *
+   * Un abonnement Mercure n'est utile qu'avec un hub qui tourne et un secret
+   * partagé avec le backend — deux choses qu'un mock navigateur ne peut pas
+   * avoir. Émettre un jeton bidon donnerait un flux qui échoue en boucle sur
+   * le vrai hub, ce qui est pire qu'une absence franche.
+   *
+   * Le 404 est capté par `fetchMercureSubscription`, qui renvoie `null` : le
+   * front bascule sur le rafraîchissement à la demande. C'est exactement le
+   * chemin de dégradation qu'on veut voir exercé en mode mocké — et le
+   * handler existe pour que la requête ne parte pas sur le réseau.
+   */
+  http.get('*/api/mercure/subscription', async () => {
+    await delay(60)
+    return HttpResponse.json(
+      {
+        '@context': '/api/contexts/Error',
+        '@type': 'Error',
+        title: 'An error occurred',
+        detail: 'Aucun hub Mercure en mode mocké.',
+        status: 404,
+      },
+      { status: 404, headers: LD_JSON },
+    )
+  }),
+
   /* ── Recommendations ──────────────────────────────────────────────────── */
 
   http.get('*/api/recommendations', async ({ request }) => {
