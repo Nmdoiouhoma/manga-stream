@@ -59,9 +59,9 @@ use Symfony\Component\Validator\Constraints as Assert;
     'genres.slug' => 'exact',
 ])]
 #[ApiFilter(CombinedTitleFilter::class)]
-#[ApiFilter(RangeFilter::class, properties: ['averageScore', 'episodeCount', 'seasonYear'])]
+#[ApiFilter(RangeFilter::class, properties: ['averageScore', 'episodeCount', 'seasonYear', 'popularity'])]
 #[ApiFilter(ExistsFilter::class, properties: ['bannerImage', 'anilistId'])]
-#[ApiFilter(OrderFilter::class, properties: ['titleRomaji', 'averageScore', 'seasonYear', 'startDate', 'createdAt'])]
+#[ApiFilter(OrderFilter::class, properties: ['titleRomaji', 'averageScore', 'popularity', 'seasonYear', 'startDate', 'createdAt'])]
 class Anime
 {
     #[ORM\Id]
@@ -122,6 +122,19 @@ class Anime
     #[Assert\Range(min: 0, max: 100)]
     #[Groups(['anime:read', 'anime:write'])]
     private ?int $averageScore = null;
+
+    /**
+     * Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes.
+     *
+     * Sans unité et sans plafond (de quelques dizaines à plusieurs centaines de
+     * milliers) : n'a de sens que comparé aux autres œuvres du catalogue. Sert de
+     * critère secondaire au moteur de recommandation, qui la ramène sur [0, 1] par
+     * une échelle logarithmique.
+     */
+    #[ORM\Column(nullable: true)]
+    #[Assert\PositiveOrZero]
+    #[Groups(['anime:read', 'anime:write'])]
+    private ?int $popularity = null;
 
     #[ORM\Column(type: 'string', length: 32, nullable: true, enumType: MediaStatus::class)]
     #[Groups(['anime:read', 'anime:write'])]
@@ -287,6 +300,18 @@ class Anime
     public function setAverageScore(?int $averageScore): static
     {
         $this->averageScore = $averageScore;
+
+        return $this;
+    }
+
+    public function getPopularity(): ?int
+    {
+        return $this->popularity;
+    }
+
+    public function setPopularity(?int $popularity): static
+    {
+        $this->popularity = $popularity;
 
         return $this;
     }
