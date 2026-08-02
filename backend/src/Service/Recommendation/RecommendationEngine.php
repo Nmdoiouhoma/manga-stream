@@ -14,21 +14,29 @@ use App\Enum\ProgressStatus;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
- * Moteur de recommandation v1 — recouvrement de genres.
+ * Moteur de recommandation v2 — similarité cosinus sur genres pondérés par leur rareté.
  *
- * Principe, volontairement simple et explicable :
+ * La v1 sommait les poids des genres communs et divisait par le poids du profil. Avec
+ * peu de favoris, presque tout candidat couvrait l'intégralité du profil : le score
+ * saturait à 1,0 pour la quasi-totalité des résultats, qui n'étaient donc plus classés.
+ * Le calcul « fonctionnait » sans rien discriminer.
  *
- *  1. les favoris de l'utilisateur forment un « profil de goût » : chaque genre y est
- *     pondéré par son nombre d'occurrences (3 favoris Action => Action pèse 3) ;
- *  2. chaque œuvre du catalogue partageant au moins un genre avec ce profil reçoit
- *     pour score la somme des poids des genres communs, ramenée au poids total du
- *     profil — donc « quelle part des goûts de l'utilisateur cette œuvre couvre »,
- *     dans [0, 1] ;
- *  3. sont exclues les œuvres déjà en favori et celles marquées comme terminées.
+ * La v2 corrige les trois causes :
  *
- * Chaque recommandation porte son explication (`reason`) : stratégie, genres ayant
- * déclenché le rapprochement, et poids brut. C'est une v1 : ni filtrage collaboratif,
- * ni pondération par popularité ou par récence.
+ *  1. **Rareté (IDF).** Un genre partagé n'a pas la même valeur selon sa fréquence dans
+ *     le catalogue : « Action », présent partout, n'apprend presque rien ; « Psychological »
+ *     est un signal fort. Chaque genre reçoit idf = ln(1 + N / df).
+ *  2. **Cosinus.** Profil et candidat deviennent des vecteurs normalisés ; le score est
+ *     leur produit scalaire. Normaliser *aussi* par le candidat pénalise les œuvres
+ *     fourre-tout à quinze genres, qui recoupaient mécaniquement n'importe quel profil.
+ *  3. **Départage par qualité.** Le cosinus seul produit encore des ex æquo ; une petite
+ *     part de note moyenne et de popularité les sépare, sans jamais dominer l'affinité.
+ *
+ * Score final dans [0, 1] : 85 % d'affinité, 10 % de note, 5 % de popularité.
+ *
+ * Chaque recommandation porte son explication (`reason`) : genres décisifs classés par
+ * contribution réelle, et détail des trois composantes. Restent hors périmètre : le
+ * filtrage collaboratif (« ceux qui ont aimé X ont aimé Y ») et la récence.
  */
 final readonly class RecommendationEngine
 {
@@ -37,6 +45,14 @@ final readonly class RecommendationEngine
 
     /** Durée au-delà de laquelle un jeu de recommandations est considéré périmé. */
     private const FRESHNESS_SECONDS = 3600;
+
+    /** Répartition du score final entre affinité, qualité et notoriété. */
+    private const WEIGHT_AFFINITY = 0.85;
+    private const WEIGHT_SCORE = 0.10;
+    private const WEIGHT_POPULARITY = 0.05;
+
+    /** Note supposée d'une œuvre non notée : neutre, pour ne pas la punir. */
+    private const NEUTRAL_SCORE = 65.0;
 
     public function __construct(private EntityManagerInterface $entityManager)
     {
@@ -83,28 +99,81 @@ final readonly class RecommendationEngine
         $excluded = $this->excludedIds($user);
         $genreIds = array_keys($profile);
 
+        $idf = $this->inverseGenreFrequency();
+        $maxPopularity = $this->maxPopularity();
+
+        // Vecteur de goût : occurrences pondérées par la rareté, puis normalisé.
+        $profileVector = [];
+        foreach ($profile as $genreId => $occurrences) {
+            $profileVector[$genreId] = $occurrences * ($idf[$genreId] ?? 0.0);
+        }
+        $profileNorm = $this->norm($profileVector);
+
+        if (0.0 === $profileNorm) {
+            // Cas limite : tous les genres du profil sont présents dans 100 % du
+            // catalogue, donc d'IDF nul. Ils ne discriminent rien — mieux vaut ne rien
+            // proposer qu'un classement arbitraire.
+            $this->entityManager->flush();
+
+            return [];
+        }
+
         $scored = [];
         foreach ([Anime::class, Manga::class] as $class) {
             foreach ($this->candidates($class, $genreIds, $excluded[$class]) as $candidate) {
-                $matched = [];
-                $weight = 0;
-
+                $candidateVector = [];
                 foreach ($candidate->getGenres() as $genre) {
-                    $id = $genre->getId();
-                    if (isset($profile[$id])) {
-                        $weight += $profile[$id];
-                        $matched[] = $genre->getSlug();
-                    }
+                    $candidateVector[$genre->getId()] = $idf[$genre->getId()] ?? 0.0;
                 }
 
-                if (0 === $weight) {
+                $candidateNorm = $this->norm($candidateVector);
+                if (0.0 === $candidateNorm) {
                     continue;
+                }
+
+                // Cosinus : part du profil couverte, rapportée à l'ampleur du candidat.
+                $dot = 0.0;
+                $contributions = [];
+                foreach ($candidateVector as $genreId => $value) {
+                    if (!isset($profileVector[$genreId])) {
+                        continue;
+                    }
+                    $product = $profileVector[$genreId] * $value;
+                    $dot += $product;
+                    $contributions[$genreId] = $product;
+                }
+
+                if (0.0 === $dot) {
+                    continue;
+                }
+
+                $affinity = $dot / ($profileNorm * $candidateNorm);
+
+                $quality = (($candidate->getAverageScore() ?? self::NEUTRAL_SCORE) / 100.0);
+                $popularity = $this->popularityOf($candidate, $maxPopularity);
+
+                $score = self::WEIGHT_AFFINITY * $affinity
+                    + self::WEIGHT_SCORE * $quality
+                    + self::WEIGHT_POPULARITY * $popularity;
+
+                // Genres décisifs : ceux qui pèsent le plus dans le produit scalaire.
+                arsort($contributions);
+                $matched = [];
+                foreach (array_slice(array_keys($contributions), 0, 4) as $genreId) {
+                    foreach ($candidate->getGenres() as $genre) {
+                        if ($genre->getId() === $genreId) {
+                            $matched[] = $genre->getSlug();
+                            break;
+                        }
+                    }
                 }
 
                 $scored[] = [
                     'entity' => $candidate,
-                    'score' => min(1.0, $weight / $totalWeight),
-                    'weight' => $weight,
+                    'score' => min(1.0, max(0.0, $score)),
+                    'affinity' => $affinity,
+                    'quality' => $quality,
+                    'popularity' => $popularity,
                     'genres' => $matched,
                 ];
             }
@@ -123,10 +192,11 @@ final readonly class RecommendationEngine
                 ->setUser($user)
                 ->setScore(round($item['score'], 4))
                 ->setReason([
-                    'strategy' => 'genre_overlap',
+                    'strategy' => 'genre_cosine_idf',
                     'genres' => $item['genres'],
-                    'weight' => $item['weight'],
-                    'profileWeight' => $totalWeight,
+                    'affinity' => round($item['affinity'], 4),
+                    'quality' => round($item['quality'], 4),
+                    'popularity' => round($item['popularity'], 4),
                 ]);
 
             if ($item['entity'] instanceof Anime) {
@@ -142,6 +212,104 @@ final readonly class RecommendationEngine
         $this->entityManager->flush();
 
         return $recommendations;
+    }
+
+    /**
+     * Rareté de chaque genre dans le catalogue : idf = ln(1 + N / df).
+     *
+     * Un genre porté par presque toutes les œuvres tend vers 0 (il n'apprend rien) ;
+     * un genre rare monte. C'est ce qui empêche « Action » d'écraser le classement.
+     *
+     * @return array<int, float> genreId => idf
+     */
+    private function inverseGenreFrequency(): array
+    {
+        $documentFrequency = [];
+        $total = 0;
+
+        foreach ([Anime::class, Manga::class] as $class) {
+            $total += (int) $this->entityManager->createQueryBuilder()
+                ->select('COUNT(c.id)')
+                ->from($class, 'c')
+                ->getQuery()
+                ->getSingleScalarResult();
+
+            $rows = $this->entityManager->createQueryBuilder()
+                ->select('g.id AS id', 'COUNT(c.id) AS df')
+                ->from($class, 'c')
+                ->join('c.genres', 'g')
+                ->groupBy('g.id')
+                ->getQuery()
+                ->getArrayResult();
+
+            foreach ($rows as $row) {
+                $id = (int) $row['id'];
+                $documentFrequency[$id] = ($documentFrequency[$id] ?? 0) + (int) $row['df'];
+            }
+        }
+
+        if (0 === $total) {
+            return [];
+        }
+
+        $idf = [];
+        foreach ($documentFrequency as $genreId => $df) {
+            // +1 au dénominateur : borne l'idf et évite la division par zéro.
+            $idf[$genreId] = log(1 + $total / (1 + $df));
+        }
+
+        return $idf;
+    }
+
+    /** Popularité la plus élevée du catalogue, servant d'échelle de normalisation. */
+    private function maxPopularity(): int
+    {
+        $max = 0;
+
+        foreach ([Anime::class, Manga::class] as $class) {
+            $value = $this->entityManager->createQueryBuilder()
+                ->select('MAX(c.popularity)')
+                ->from($class, 'c')
+                ->getQuery()
+                ->getSingleScalarResult();
+
+            $max = max($max, (int) $value);
+        }
+
+        return $max;
+    }
+
+    /**
+     * Popularité ramenée dans [0, 1] sur une échelle logarithmique.
+     *
+     * La popularité AniList suit une distribution à longue traîne : quelques titres
+     * écrasent tous les autres. En linéaire, tout le catalogue serait tassé près de 0
+     * et cette composante ne départagerait rien.
+     */
+    private function popularityOf(Anime|Manga $candidate, int $maxPopularity): float
+    {
+        if ($maxPopularity <= 0) {
+            return 0.0;
+        }
+
+        $popularity = $candidate->getPopularity() ?? 0;
+
+        return log(1 + max(0, $popularity)) / log(1 + $maxPopularity);
+    }
+
+    /**
+     * Norme euclidienne d'un vecteur creux.
+     *
+     * @param array<int, float> $vector
+     */
+    private function norm(array $vector): float
+    {
+        $sum = 0.0;
+        foreach ($vector as $value) {
+            $sum += $value ** 2;
+        }
+
+        return sqrt($sum);
     }
 
     private function isStale(User $user): bool

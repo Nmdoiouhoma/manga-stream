@@ -158,10 +158,54 @@ final class RecommendationTest extends ApiTestCase
         ]);
 
         $items = json_decode((string) self::getClient()->getResponse()->getContent(), true);
-        self::assertSame('genre_overlap', $items[0]['reason']['strategy']);
+        self::assertSame('genre_cosine_idf', $items[0]['reason']['strategy']);
         self::assertSame(['action'], $items[0]['reason']['genres']);
         self::assertGreaterThan(0, $items[0]['score']);
         self::assertLessThanOrEqual(1, $items[0]['score']);
+        // Les trois composantes du score doivent être exposées pour rester explicable.
+        self::assertArrayHasKey('affinity', $items[0]['reason']);
+        self::assertArrayHasKey('quality', $items[0]['reason']);
+        self::assertArrayHasKey('popularity', $items[0]['reason']);
+    }
+
+    /**
+     * Régression v1 : le score saturait à 1,0 pour la quasi-totalité des résultats,
+     * qui n'étaient donc plus classés. Avec des candidats d'affinité franchement
+     * différente, les scores doivent se séparer et l'ordre refléter la pertinence.
+     */
+    public function testScoresDiscriminateBetweenCandidates(): void
+    {
+        $user = $this->createUser('bob@example.com', 'bob');
+
+        $psychological = $this->createGenre('Psychological', 'psychological');
+        $thriller = $this->createGenre('Thriller', 'thriller');
+        $comedy = $this->createGenre('Comedy', 'comedy');
+
+        // Profil : psychologique + thriller.
+        $this->favorite($user, $this->createAnime('Monster', null, null, $psychological, $thriller));
+
+        // Recoupement total, recoupement partiel, recoupement minimal.
+        $this->createAnime('Death Note', null, null, $psychological, $thriller);
+        $this->createAnime('Erased', null, null, $thriller);
+        $this->createAnime('Gintama', null, null, $comedy, $thriller);
+
+        $this->client($this->tokenFor($user))->request('GET', '/api/recommendations', [
+            'headers' => ['Accept' => 'application/json'],
+        ]);
+
+        $items = json_decode((string) self::getClient()->getResponse()->getContent(), true);
+        self::assertGreaterThanOrEqual(3, \count($items));
+
+        $scores = array_column($items, 'score');
+
+        // Le cœur de la régression : plus un seul plateau d'ex æquo.
+        self::assertCount(\count($scores), array_unique($scores), 'Les scores doivent être distincts.');
+
+        // Et l'ordre doit être décroissant, le plus affine en tête.
+        $sorted = $scores;
+        rsort($sorted);
+        self::assertSame($sorted, $scores, 'Les recommandations doivent être triées par score décroissant.');
+        self::assertSame('Death Note', $items[0]['anime']['titleRomaji']);
     }
 
     /**
