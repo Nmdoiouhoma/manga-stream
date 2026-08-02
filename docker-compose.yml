@@ -61,6 +61,45 @@ x-backend-env: &backend-env
   DEFAULT_URI: ${DEFAULT_URI:-http://localhost:8000}
   # Set to 1 to run doctrine:migrations:migrate on container start.
   RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
+  # -------------------------------------------------------------------------
+  # Envoi d'e-mails (symfony/mailer)
+  #
+  # En dev le DSN pointe sur Mailpit : rien ne sort de la machine, tout
+  # s'affiche sur http://localhost:8025. Le worker reçoit exactement la même
+  # valeur — c'est lui qui expédie réellement quand le mail est routé en
+  # asynchrone via Messenger.
+  #
+  # `mailpit` est le nom du service compose, PAS localhost : depuis le
+  # conteneur backend, localhost désigne le conteneur backend lui-même.
+  # -------------------------------------------------------------------------
+  MAILER_DSN: ${MAILER_DSN:-smtp://mailpit:1025}
+  # Expéditeur par défaut des mails transactionnels (réinitialisation de mot
+  # de passe, notifications). Doit être une adresse valide syntaxiquement,
+  # Mailpit ne vérifie pas le domaine.
+  MAILER_FROM: ${MAILER_FROM:-no-reply@manga-stream.local}
+  # -------------------------------------------------------------------------
+  # Proxys de confiance (Symfony >= 6.3)
+  #
+  # Lu AUTOMATIQUEMENT par framework.trusted_proxies, dont la valeur par
+  # défaut est `%env(default::SYMFONY_TRUSTED_PROXIES)%` : aucune ligne de
+  # configuration n'est nécessaire côté backend, il suffit que la variable
+  # existe.
+  #
+  # Pourquoi ça compte : php-fpm ne voit jamais l'IP du visiteur, il voit
+  # celle de nginx. Sans cette variable, un limiteur de débit indexé sur
+  # l'IP mettrait TOUS les utilisateurs dans le même compteur, et le premier
+  # attaquant bloquerait tout le monde.
+  #
+  # Valeur de dev : l'IP FIXE de nginx (voir le service `nginx` et le bloc
+  # `networks` en bas de fichier), et elle seule. Faire confiance à toute la
+  # plage 172.21.0.0/16 en dev serait une erreur : la passerelle Docker
+  # 172.21.0.1 en fait partie, c'est l'adresse source des requêtes venant du
+  # Mac, et un client pourrait alors usurper son IP via X-Forwarded-For.
+  # En production, nginx est lui-même derrière Caddy : les deux sauts sont
+  # internes et la valeur devient la plage complète du réseau
+  # (voir docker-compose.prod.yml).
+  # -------------------------------------------------------------------------
+  SYMFONY_TRUSTED_PROXIES: ${SYMFONY_TRUSTED_PROXIES:-${NGINX_IP:-172.21.0.250}}
 
 # Build definition shared by `backend` and `worker`: same Dockerfile, same
 # image, so the worker always runs exactly the code the API runs.
@@ -123,6 +162,11 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      # `service_started` et non `service_healthy` : un SMTP indisponible ne
+      # doit jamais empêcher l'API de démarrer, l'envoi de mail n'est pas sur
+      # le chemin critique d'une requête HTTP.
+      mailpit:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "php -v > /dev/null 2>&1 || exit 1"]
       interval: 15s
@@ -173,6 +217,12 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      # C'est le worker qui expédie réellement les mails routés en asynchrone :
+      # on attend au moins que Mailpit ait démarré pour éviter une première
+      # salve d'échecs au boot. Les messages seraient de toute façon rejoués
+      # par Messenger, mais autant ne pas polluer les logs.
+      mailpit:
+        condition: service_started
     # Give Messenger time to finish the message in flight on `compose down`.
     stop_grace_period: 30s
     # No healthcheck on purpose: an idle worker with nothing to consume is a
@@ -271,7 +321,21 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - manga-stream
+      manga-stream:
+        # IP FIXE, et c'est structurant.
+        #
+        # php-fpm ne voit jamais l'IP du visiteur : il voit REMOTE_ADDR =
+        # l'adresse de nginx. Pour que Symfony accepte de lire l'IP réelle
+        # dans X-Forwarded-For, il doit reconnaître nginx comme proxy de
+        # confiance — donc connaître son adresse. Or une IP allouée
+        # dynamiquement change à chaque `docker compose up -d` qui recrée le
+        # conteneur : la déclaration côté backend deviendrait fausse en
+        # silence, et le limiteur de débit retomberait sur un compteur unique
+        # partagé par tout le monde.
+        #
+        # .250 et pas .2 : Docker alloue les adresses dynamiques en partant du
+        # bas de la plage, une adresse basse finirait par entrer en collision.
+        ipv4_address: ${NGINX_IP:-172.21.0.250}
 
   # -------------------------------------------------------------------------
   # Vite dev server (React + TypeScript)
@@ -307,6 +371,55 @@ services:
       # Keep the container node_modules isolated from the host one
       # (native bindings differ between macOS and alpine/linux).
       - frontend_node_modules:/app/node_modules
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
+  # Mailpit — serveur SMTP de développement
+  #
+  # Il accepte TOUT ce qu'on lui envoie et n'expédie RIEN vers l'extérieur :
+  # les mails s'empilent dans une interface web au lieu d'arriver dans une
+  # vraie boîte. C'est exactement ce qu'il faut pour développer une
+  # réinitialisation de mot de passe sans risquer d'écrire à un vrai
+  # utilisateur ni de faire blacklister un domaine.
+  #
+  #   http://localhost:8025   interface web (lecture des mails)
+  #   mailpit:1025            SMTP, depuis les conteneurs -> MAILER_DSN
+  #   localhost:1025          SMTP, depuis le Mac (outils de test)
+  #
+  # L'API REST de l'interface sert aussi aux tests automatisés :
+  #   curl -s http://localhost:8025/api/v1/messages | jq '.messages[0].Subject'
+  #   curl -s -X DELETE http://localhost:8025/api/v1/messages   # vider
+  # -------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: manga-stream-mailpit
+    restart: unless-stopped
+    environment:
+      # Accepte n'importe quel couple identifiant/mot de passe, y compris
+      # aucun : le DSN de dev n'a donc pas à porter de credentials.
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      # Autorise l'authentification en clair (pas de TLS sur le réseau
+      # compose). Sans ça, un DSN avec identifiants serait rejeté.
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+      # Anneau glissant : au-delà, les plus vieux messages sont supprimés.
+      MP_MAX_MESSAGES: ${MAILPIT_MAX_MESSAGES:-500}
+      # Sans ce fichier, Mailpit garde tout en mémoire et perd la boîte à
+      # chaque redémarrage.
+      MP_DATABASE: /data/mailpit.db
+    ports:
+      - "${MAILPIT_HTTP_PORT:-8025}:8025"
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      # Sonde fournie par le binaire lui-même : l'image est minimale et n'a
+      # ni curl ni wget.
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - manga-stream
 
@@ -375,9 +488,26 @@ services:
 networks:
   manga-stream:
     driver: bridge
+    # Plage FIGÉE volontairement. Docker en choisirait une libre au hasard
+    # (172.17, 172.18, 172.21... selon ce qui tourne déjà sur la machine) et
+    # elle changerait d'un poste à l'autre — or c'est cette plage que le
+    # backend déclare en proxys de confiance et que la sauvegarde/restauration
+    # documente. Une valeur imprévisible ne se documente pas.
+    #
+    # En cas de collision avec un autre réseau Docker de la machine
+    # (« Pool overlaps with other one on this address space ») : poser
+    # DOCKER_SUBNET=172.31.0.0/16 et NGINX_IP=172.31.0.250 dans .env, puis
+    # `docker compose down && docker compose up -d`. Les volumes, donc la
+    # base, ne sont pas touchés.
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.21.0.0/16}
 
 volumes:
   database_data:
+  # Boîte aux lettres de développement. La supprimer ne fait perdre que des
+  # mails de test.
+  mailpit_data:
   composer_cache:
   frontend_node_modules:
   mercure_data:
