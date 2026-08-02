@@ -3277,15 +3277,39 @@ paths:
         - 'Login Check'
       responses:
         '200':
-          description: 'User token created'
+          description: 'Jeton créé. `mercure` porte de quoi ouvrir immédiatement le flux temps réel.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - token
+                properties:
+                  token: { type: string, readOnly: true, description: "JWT d'API, à présenter en `Authorization: Bearer`." }
+                  mercure: { type: object, description: "Abonnement Mercure de l'utilisateur. Absent si l'émission du jeton a échoué ; utiliser alors `GET /api/mercure/subscription`.", required: [hubUrl, topic, token], properties: { hubUrl: { type: string, example: 'http://localhost:3000/.well-known/mercure' }, topic: { type: string, example: /api/users/42/notifications }, token: { type: string, description: 'JWT abonné, `mercure.subscribe` restreint à `topic`.' } } }
+        '401':
+          description: 'Identifiants invalides. Corps propre à lexik/jwt-authentication-bundle, pas du application/problem+json.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code: { type: integer, example: 401 }
+                  message: { type: string, example: 'Invalid credentials.' }
+        '400':
+          description: "Requête malformée : JSON illisible, ou clé `email`/`password` absente. Réponse du gestionnaire d'exceptions de Symfony (RFC 7807)."
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  token: { readOnly: true, type: string, nullable: false }
-                required:
-                  - token
+                  type: { type: string, example: 'https://tools.ietf.org/html/rfc2616#section-10' }
+                  title: { type: string, example: 'An error occurred' }
+                  status: { type: integer, example: 400 }
+                  detail: { type: string, example: 'The key "password" must be provided.' }
       summary: 'Creates a user token.'
       description: 'Creates a user token.'
       requestBody:
@@ -4103,6 +4127,50 @@ paths:
             schema:
               $ref: '#/components/schemas/Manga-manga.write.jsonMergePatch'
         required: true
+  /api/mercure/subscription:
+    get:
+      operationId: api_mercuresubscription_get
+      tags:
+        - MercureSubscription
+      responses:
+        '200':
+          description: 'MercureSubscription resource'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/MercureSubscription.jsonld-mercure.read'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MercureSubscription-mercure.read'
+        '403':
+          description: Forbidden
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
+        '404':
+          description: 'Not found'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
+      summary: "Abonnement Mercure de l'utilisateur authentifié."
+      description: "Abonnement Mercure de l'utilisateur authentifié."
+      parameters: []
   /api/notifications:
     get:
       operationId: api_notifications_get_collection
@@ -6230,6 +6298,12 @@ components:
           type:
             - integer
             - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
+          type:
+            - integer
+            - 'null'
         status:
           type:
             - string
@@ -6336,6 +6410,12 @@ components:
           minimum: 0
           maximum: 100
           description: 'Score moyen sur 100 (convention AniList).'
+          type:
+            - integer
+            - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
           type:
             - integer
             - 'null'
@@ -6449,6 +6529,12 @@ components:
           type:
             - integer
             - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
+          type:
+            - integer
+            - 'null'
         status:
           type:
             - string
@@ -6548,6 +6634,12 @@ components:
           minimum: 0
           maximum: 100
           description: 'Score moyen sur 100 (convention AniList).'
+          type:
+            - integer
+            - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
           type:
             - integer
             - 'null'
@@ -6852,6 +6944,12 @@ components:
               type:
                 - integer
                 - 'null'
+            popularity:
+              minimum: 0
+              description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
+              type:
+                - integer
+                - 'null'
             status:
               type:
                 - string
@@ -6961,6 +7059,12 @@ components:
               minimum: 0
               maximum: 100
               description: 'Score moyen sur 100 (convention AniList).'
+              type:
+                - integer
+                - 'null'
+            popularity:
+              minimum: 0
+              description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
               type:
                 - integer
                 - 'null'
@@ -7594,9 +7698,12 @@ components:
             - $ref: '#/components/schemas/Manga-comment.read'
             - type: 'null'
         parent:
-          anyOf:
-            - $ref: '#/components/schemas/Comment-comment.read'
-            - type: 'null'
+          description: 'Commentaire parent lorsque celui-ci est une réponse.'
+          type:
+            - string
+            - 'null'
+          format: iri-reference
+          example: 'https://example.com/'
         createdAt:
           type: string
           format: date-time
@@ -7625,9 +7732,12 @@ components:
             - $ref: '#/components/schemas/Manga-comment.read_comment.item.read'
             - type: 'null'
         parent:
-          anyOf:
-            - $ref: '#/components/schemas/Comment-comment.read_comment.item.read'
-            - type: 'null'
+          description: 'Commentaire parent lorsque celui-ci est une réponse.'
+          type:
+            - string
+            - 'null'
+          format: iri-reference
+          example: 'https://example.com/'
         replies:
           type: array
           items:
@@ -7668,9 +7778,12 @@ components:
           format: iri-reference
           example: 'https://example.com/'
         parent:
-          anyOf:
-            - $ref: '#/components/schemas/Comment-comment.write'
-            - type: 'null'
+          description: 'Commentaire parent lorsque celui-ci est une réponse.'
+          type:
+            - string
+            - 'null'
+          format: iri-reference
+          example: 'https://example.com/'
       required:
         - content
     Comment-comment.write.jsonMergePatch:
@@ -7704,9 +7817,12 @@ components:
           format: iri-reference
           example: 'https://example.com/'
         parent:
-          anyOf:
-            - $ref: '#/components/schemas/Comment-comment.write'
-            - type: 'null'
+          description: 'Commentaire parent lorsque celui-ci est une réponse.'
+          type:
+            - string
+            - 'null'
+          format: iri-reference
+          example: 'https://example.com/'
     Comment.jsonld-comment.read:
       allOf:
         - $ref: '#/components/schemas/HydraItemBaseSchema'
@@ -7731,17 +7847,19 @@ components:
               anyOf:
                 - $ref: '#/components/schemas/Manga.jsonld-comment.read'
                 - type: 'null'
+            parent:
+              description: 'Commentaire parent lorsque celui-ci est une réponse.'
+              type:
+                - string
+                - 'null'
+              format: iri-reference
+              example: 'https://example.com/'
+            createdAt:
+              type: string
+              format: date-time
           required:
             - content
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
-      properties:
-        parent:
-          anyOf:
-            - $ref: '#/components/schemas/Comment.jsonld-comment.read'
-            - type: 'null'
-        createdAt:
-          type: string
-          format: date-time
     Comment.jsonld-comment.read_comment.item.read:
       allOf:
         - $ref: '#/components/schemas/HydraItemBaseSchema'
@@ -7766,14 +7884,17 @@ components:
               anyOf:
                 - $ref: '#/components/schemas/Manga.jsonld-comment.read_comment.item.read'
                 - type: 'null'
+            parent:
+              description: 'Commentaire parent lorsque celui-ci est une réponse.'
+              type:
+                - string
+                - 'null'
+              format: iri-reference
+              example: 'https://example.com/'
           required:
             - content
       description: 'Commentaire utilisateur (fil de discussion à un niveau de réponse).'
       properties:
-        parent:
-          anyOf:
-            - $ref: '#/components/schemas/Comment.jsonld-comment.read_comment.item.read'
-            - type: 'null'
         replies:
           type: array
           items:
@@ -8995,6 +9116,12 @@ components:
           type:
             - integer
             - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
+          type:
+            - integer
+            - 'null'
         status:
           type:
             - string
@@ -9090,6 +9217,12 @@ components:
           minimum: 0
           maximum: 100
           description: 'Score moyen sur 100 (convention AniList).'
+          type:
+            - integer
+            - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
           type:
             - integer
             - 'null'
@@ -9192,6 +9325,12 @@ components:
           type:
             - integer
             - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
+          type:
+            - integer
+            - 'null'
         status:
           type:
             - string
@@ -9280,6 +9419,12 @@ components:
           minimum: 0
           maximum: 100
           description: 'Score moyen sur 100 (convention AniList).'
+          type:
+            - integer
+            - 'null'
+        popularity:
+          minimum: 0
+          description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
           type:
             - integer
             - 'null'
@@ -9597,6 +9742,12 @@ components:
               type:
                 - integer
                 - 'null'
+            popularity:
+              minimum: 0
+              description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
+              type:
+                - integer
+                - 'null'
             status:
               type:
                 - string
@@ -9695,6 +9846,12 @@ components:
               minimum: 0
               maximum: 100
               description: 'Score moyen sur 100 (convention AniList).'
+              type:
+                - integer
+                - 'null'
+            popularity:
+              minimum: 0
+              description: "Nombre d'utilisateurs AniList ayant l'œuvre dans une de leurs listes."
               type:
                 - integer
                 - 'null'
@@ -9863,6 +10020,39 @@ components:
           required:
             - titleRomaji
       description: 'Œuvre papier / webtoon du catalogue.'
+    MercureSubscription-mercure.read:
+      type: object
+      description: "Jeton d'abonnement Mercure, limité au topic personnel du porteur."
+      properties:
+        hubUrl:
+          description: "URL publique du hub, telle qu'un navigateur peut la joindre."
+          example: 'http://localhost:3000/.well-known/mercure'
+          type: string
+        topic:
+          description: 'Unique topic auquel ce jeton donne accès.'
+          example: /api/users/42/notifications
+          type: string
+        token:
+          description: 'JWT abonné signé par le backend (HS256, secret partagé avec le hub).'
+          type: string
+    MercureSubscription.jsonld-mercure.read:
+      allOf:
+        - $ref: '#/components/schemas/HydraItemBaseSchema'
+        -
+          type: object
+          properties:
+            hubUrl:
+              description: "URL publique du hub, telle qu'un navigateur peut la joindre."
+              example: 'http://localhost:3000/.well-known/mercure'
+              type: string
+            topic:
+              description: 'Unique topic auquel ce jeton donne accès.'
+              example: /api/users/42/notifications
+              type: string
+            token:
+              description: 'JWT abonné signé par le backend (HS256, secret partagé avec le hub).'
+              type: string
+      description: "Jeton d'abonnement Mercure, limité au topic personnel du porteur."
     Notification-notification.read:
       type: object
       description: 'Notification utilisateur.'
@@ -11121,6 +11311,8 @@ security:
   -
     JWT: []
 tags:
+  - name: MercureSubscription
+    description: "Paramètres d'abonnement au hub Mercure pour l'utilisateur authentifié."
   - name: Anime
     description: 'Série animée du catalogue.'
   - name: Chapter

@@ -40,18 +40,39 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
     /**
      * Comptes administrateurs, destinataires des notifications d'exploitation.
      *
-     * `roles` est une colonne JSON : plutôt qu'un opérateur `@>` propre à Postgres,
-     * on filtre sur sa représentation textuelle. C'est moins élégant mais portable,
-     * et le nombre de comptes reste sans commune mesure avec le coût d'un index.
+     * Le filtrage se fait en PHP, et c'est délibéré. `roles` est une colonne `json` :
+     * `LIKE` dessus échoue sous Postgres (« operator does not exist: json ~~ unknown »),
+     * DQL ne connaît pas `CAST`, et l'opérateur de confinement `@>` n'existe que sous
+     * Postgres — le brancher ici ferait échouer la suite de tests le jour où elle
+     * tournerait sur autre chose. On lit donc `(id, roles)`, deux colonnes étroites,
+     * puis on charge les seules entités retenues. La requête est appelée une fois par
+     * campagne d'import, jamais dans un chemin de requête HTTP.
      *
      * @return list<User>
      */
     public function findAdmins(): array
     {
+        /** @var list<array{id: int, roles: list<string>}> $rows */
+        $rows = $this->createQueryBuilder('u')
+            ->select('u.id', 'u.roles')
+            ->getQuery()
+            ->getArrayResult();
+
+        $ids = [];
+        foreach ($rows as $row) {
+            if (\in_array('ROLE_ADMIN', $row['roles'], true)) {
+                $ids[] = $row['id'];
+            }
+        }
+
+        if ([] === $ids) {
+            return [];
+        }
+
         /** @var list<User> $users */
         $users = $this->createQueryBuilder('u')
-            ->andWhere('CAST(u.roles AS text) LIKE :role')
-            ->setParameter('role', '%ROLE_ADMIN%')
+            ->andWhere('u.id IN (:ids)')
+            ->setParameter('ids', $ids)
             ->orderBy('u.id', 'ASC')
             ->getQuery()
             ->getResult();
