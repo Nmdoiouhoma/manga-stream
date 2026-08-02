@@ -97,7 +97,12 @@ export function episodesFor(animeId: number, episodeCount: number | null | undef
       duration: 24,
       ...(hasDate ? { airDate: new Date(Date.UTC(2023, 0, 1 + number * 7)).toISOString() } : {}),
       ...(hasThumb ? { thumbnail: `https://placehold.co/320x180?text=EP${number}` } : {}),
-      ...(hasThumb ? { streamUrl: `https://example.invalid/watch/${animeId}/${number}` } : {}),
+      // Hôte réel : le libellé du bouton est dérivé du domaine (« Regarder sur
+      // Crunchyroll »). Un `example.invalid` afficherait « Regarder sur
+      // example.invalid » et ne validerait donc pas le rendu attendu.
+      ...(hasThumb
+        ? { streamUrl: `https://www.crunchyroll.com/watch/MOCK${animeId}${number}/episode-${number}` }
+        : {}),
     }
   })
 }

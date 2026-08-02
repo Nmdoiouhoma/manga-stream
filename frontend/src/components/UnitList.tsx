@@ -20,6 +20,17 @@
  * atteindre la fin. La liste est donc découpée en tranches avec un sélecteur
  * de plage, ce qui rend n'importe quel épisode atteignable en deux gestes.
  *
+ * ── Liens de visionnage ───────────────────────────────────────────────────
+ * 1 795 des 4 392 épisodes en base portent un `streamUrl` officiel importé
+ * d'AniList (Crunchyroll, essentiellement). La couverture est très inégale :
+ * totale sur Death Note ou Fullmetal Alchemist, **69 liens sur 1 147** pour
+ * One Piece. Deux conséquences assumées ici :
+ *   - une ligne sans lien n'affiche rien du tout (pas de bouton grisé : la
+ *     donnée est absente chez AniList, ce n'est pas une panne) ;
+ *   - quand la couverture est partielle, un filtre « disponibles en ligne »
+ *     évite d'avoir à parcourir 23 tranches pour trouver les 69 épisodes
+ *     regardables.
+ *
  * ── Typage ────────────────────────────────────────────────────────────────
  * `Episode.number` est un `integer`. `Chapter.number` est un `decimal(8,2)`
  * sérialisé en **string** JSON ("12.50") — jamais un nombre. Tout calcul passe
@@ -28,6 +39,8 @@
 import { useMemo, useState } from 'react'
 import { useMediaProgress, useSaveProgress, type ProgressEntry } from '../api/progress'
 import { useAuth } from '../auth/useAuth'
+import { ExternalLink } from './ExternalLink'
+import { externalProviderName, safeExternalUrl } from '../lib/externalUrl'
 import {
   formatChapterNumber,
   formatDate,
@@ -52,9 +65,13 @@ type Unit = {
   /** « 24 min » ou « 18 p. ». `null` si le champ manque. */
   metric: string | null
   date: string | null
-  /** Lien externe (streaming / lecture), quand le backend en fournit un. */
+  /**
+   * Lien sortant (visionnage / lecture) validé : `null` dès que l'URL est
+   * absente ou n'est pas en http(s).
+   */
   externalUrl: string | null
-  externalLabel: string
+  /** Nom du service, « Crunchyroll » le plus souvent. `null` sans lien. */
+  provider: string | null
 }
 
 function episodeToUnit(episode: Episode): Unit {
@@ -66,8 +83,8 @@ function episodeToUnit(episode: Episode): Unit {
     thumbnail: episode.thumbnail?.trim() || null,
     metric: episode.duration ? `${episode.duration} min` : null,
     date: formatDate(episode.airDate),
-    externalUrl: episode.streamUrl?.trim() || null,
-    externalLabel: 'Voir',
+    externalUrl: safeExternalUrl(episode.streamUrl),
+    provider: externalProviderName(episode.streamUrl),
   }
 }
 
@@ -82,8 +99,8 @@ function chapterToUnit(chapter: Chapter): Unit {
     thumbnail: null, // Le contrat n'expose pas de vignette de chapitre.
     metric: chapter.pageCount ? `${chapter.pageCount} p.` : null,
     date: formatDate(chapter.releaseDate),
-    externalUrl: chapter.readUrl?.trim() || null,
-    externalLabel: 'Lire',
+    externalUrl: safeExternalUrl(chapter.readUrl),
+    provider: externalProviderName(chapter.readUrl),
   }
 }
 
@@ -99,14 +116,31 @@ export function UnitList({ media }: { media: MediaDetail }) {
     [isAnime, media.episodes, media.chapters],
   )
 
-  const chunks = useMemo(() => chunk(units, CHUNK_SIZE), [units])
+  // Combien portent un lien sortant exploitable. Calculé sur la liste
+  // **complète**, pas sur la tranche visible : « 69 épisodes disponibles » doit
+  // parler du titre, pas de la page en cours.
+  const onlineCount = useMemo(
+    () => units.filter((unit) => unit.externalUrl !== null).length,
+    [units],
+  )
+  const [onlineOnly, setOnlineOnly] = useState(false)
+  // Le filtre ne peut rester actif s'il ne reste rien à filtrer (changement de
+  // fiche sans démontage du composant) : sinon la liste paraîtrait vide.
+  const filterActive = onlineOnly && onlineCount > 0
+  const shown = useMemo(
+    () => (filterActive ? units.filter((unit) => unit.externalUrl !== null) : units),
+    [filterActive, units],
+  )
+
+  const chunks = useMemo(() => chunk(shown, CHUNK_SIZE), [shown])
   const [page, setPage] = useState(0)
-  // La liste peut rétrécir entre deux rendus (navigation, refetch) : borner
-  // l'index évite d'afficher une tranche vide sans jamais le dire.
+  // La liste peut rétrécir entre deux rendus (navigation, refetch, filtre) :
+  // borner l'index évite d'afficher une tranche vide sans jamais le dire.
   const safePage = Math.min(page, Math.max(0, chunks.length - 1))
   const visible = chunks[safePage] ?? []
 
   const heading = isAnime ? 'Épisodes' : 'Chapitres'
+  const noun = isAnime ? 'épisode' : 'chapitre'
   const current = (isAnime ? entry?.currentEpisode : entry?.currentChapter) ?? null
 
   return (
@@ -134,6 +168,35 @@ export function UnitList({ media }: { media: MediaDetail }) {
           </label>
         )}
       </div>
+
+      {onlineCount > 0 && (
+        <div className="unit-online">
+          <p className="unit-online__count">
+            <strong>{onlineCount}</strong> {noun}
+            {onlineCount > 1 ? 's' : ''} disponible{onlineCount > 1 ? 's' : ''} en ligne
+            {/* Le rapport n'est affiché que s'il apprend quelque chose : sur un
+                titre couvert à 100 %, « 64 sur 64 » est du bruit. */}
+            {onlineCount < units.length && <span className="muted"> sur {units.length}</span>}
+          </p>
+
+          {/* Le filtre n'a de sens qu'en couverture partielle. Sur One Piece il
+              fait passer de 23 tranches à 2. */}
+          {onlineCount < units.length && (
+            <label className="unit-online__filter">
+              <input
+                type="checkbox"
+                checked={onlineOnly}
+                onChange={(event) => {
+                  setOnlineOnly(event.target.checked)
+                  // La tranche 12 n'existe plus une fois filtré : repartir du début.
+                  setPage(0)
+                }}
+              />
+              <span>Uniquement ceux disponibles en ligne</span>
+            </label>
+          )}
+        </div>
+      )}
 
       {units.length === 0 ? (
         <EmptyUnits isAnime={isAnime} announced={media.unitCount} />
@@ -214,6 +277,7 @@ function UnitRow({
   const [imageFailed, setImageFailed] = useState(false)
   const showThumb = Boolean(unit.thumbnail) && !imageFailed
   const fallbackTitle = `${isAnime ? 'Épisode' : 'Chapitre'} ${unit.label}`
+  const verb = isAnime ? 'Regarder' : 'Lire'
 
   // Assemblé plutôt que concaténé : sans ça, une durée absente laisserait un
   // « · » en tête de ligne, et deux champs absents une chaîne de séparateurs.
@@ -250,16 +314,20 @@ function UnitRow({
       {meta !== '' && <span className="unit__meta">{meta}</span>}
 
       <span className="unit__actions">
-        {unit.externalUrl && (
-          <a
-            className="btn btn--link"
-            href={unit.externalUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            {unit.externalLabel}
-          </a>
-        )}
+        {/* « Regarder » est réservé aux vrais liens sortants : ailleurs dans
+            l'app l'action est un suivi, pas un visionnage. `ExternalLink` ne
+            rend rien quand l'URL est absente ou non http(s). */}
+        <ExternalLink
+          className="unit__external"
+          href={unit.externalUrl}
+          label={`${verb} ${isAnime ? 'l’épisode' : 'le chapitre'} ${unit.label} sur ${
+            unit.provider ?? 'le site externe'
+          } — nouvel onglet`}
+        >
+          <span className="unit__external-text">
+            {verb} sur {unit.provider}
+          </span>
+        </ExternalLink>
 
         {canMark && (
           <button
