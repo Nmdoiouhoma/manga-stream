@@ -132,7 +132,8 @@ export function CatalogPage() {
       <header className="catalog__header">
         <h1 className="catalog__title">Catalogue</h1>
         <p className="catalog__subtitle">
-          Animes et mangas, filtrés par genre, statut, saison et titre.
+          Animes et mangas à suivre : filtrez par genre, statut, saison ou titre, puis ajoutez-les
+          à votre liste.
         </p>
       </header>
 

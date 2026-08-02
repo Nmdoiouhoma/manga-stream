@@ -11,8 +11,12 @@ type Props = {
 }
 
 /**
- * Bouton « À voir » / « À lire » : crée (ou remet) une progression au statut
- * `PLANNED` sur le titre visé.
+ * Bouton « Suivre » / « Ajouter à ma liste » : crée (ou remet) une progression
+ * au statut `PLANNED` sur le titre visé.
+ *
+ * Le libellé dit ce que l'action fait vraiment. « Regarder » a été réservé aux
+ * liens sortants vers les plateformes officielles (voir `UnitList`), où le mot
+ * est exact : ici, rien n'est diffusé, un titre est ajouté à une liste.
  *
  * Il n'y a **pas** de ressource « watchlist » dans le contrat. Le statut
  * `PLANNED` de `Progress` est exactement cette sémantique, il est déjà exposé
@@ -33,7 +37,9 @@ export function WatchlistButton({ targetIri, kind, variant = 'sm' }: Props) {
 
   const isPlanned = entry?.status === 'PLANNED'
   const isTrackedOtherwise = entry !== null && !isPlanned
-  const label = kind === 'anime' ? 'À voir' : 'À lire'
+  // Une carte de catalogue n'a pas la place d'une phrase ; une fiche, si — et
+  // « Ajouter à ma liste » y lève toute ambiguïté sur ce que fait le bouton.
+  const label = variant === 'full' ? 'Ajouter à ma liste' : 'Suivre'
 
   const handleClick = (event: React.MouseEvent) => {
     // Le bouton peut vivre dans un <Link> : ne jamais naviguer par accident.

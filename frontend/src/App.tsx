@@ -89,7 +89,8 @@ function AppShell({ children }: { children: ReactNode }) {
       <main className="main">{children}</main>
 
       <footer className="footer">
-        manga-stream · phase 3 · {USE_MOCKS ? 'données simulées via MSW' : 'API réelle'}
+        manga-stream · suivi d’animes et de mangas ·{' '}
+        {USE_MOCKS ? 'données simulées via MSW' : 'API réelle'}
       </footer>
     </div>
   )
