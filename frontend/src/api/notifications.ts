@@ -44,37 +44,96 @@ export type NotificationEntry = {
 }
 
 /**
- * Turns the untyped payload into something displayable.
+ * Lit une clé du payload comme du texte.
  *
- * Deliberately tolerant: any of these key spellings may show up depending on
- * how the backend ends up writing them, and an unknown payload degrades to the
- * notification type label rather than to an empty row.
+ * ⚠️ Le contrat type le payload en `Record<string, string | null>`, ce que le
+ * backend **ne respecte pas** : les charges réelles contiennent des entiers
+ * (`commentId`, `episodeNumber`, `created`, `skipped`). Relevé en base :
+ *
+ *   {"commentId":15,"commentIri":"/api/comments/15","authorUsername":"…","excerpt":"…"}
+ *   {"animeId":8,"animeIri":"/api/animes/8","animeTitle":"ONE PIECE","episodeNumber":1148}
+ *
+ * D'où le passage par `unknown` : appeler une méthode de chaîne sur un nombre
+ * lèverait à l'exécution alors que le compilateur ne voit rien. Écart de
+ * contrat à remonter, mais la lecture défensive a de toute façon sa place —
+ * le payload est du JSON libre côté base.
+ */
+function text(payload: Record<string, string | null>, key: string): string | null {
+  const value: unknown = payload[key]
+  if (typeof value === 'string') return value.trim() || null
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return null
+}
+
+/**
+ * Rend le payload lisible.
+ *
+ * Les clés sont celles réellement émises par le backend depuis le 2026-08-02
+ * (`CommentNotifyProcessor`, `SyncAnilistEpisodesHandler`), vérifiées sur les
+ * lignes en base. Les orthographes alternatives sont conservées en repli : le
+ * payload n'est contraint par aucun schéma, et un libellé approximatif vaut
+ * mieux qu'une ligne vide.
  */
 function describe(type: NotificationType, payload: Record<string, string | null>): string {
-  const title = payload.title ?? payload.mediaTitle ?? payload.animeTitle ?? payload.mangaTitle
-  const number = payload.number ?? payload.episode ?? payload.chapter
-
-  if (payload.message) return payload.message
+  const title =
+    text(payload, 'animeTitle') ??
+    text(payload, 'mangaTitle') ??
+    text(payload, 'title') ??
+    text(payload, 'mediaTitle')
+  const number =
+    text(payload, 'episodeNumber') ??
+    text(payload, 'chapterNumber') ??
+    text(payload, 'number') ??
+    text(payload, 'episode') ??
+    text(payload, 'chapter')
 
   switch (type) {
-    case 'NEW_EPISODE':
-      return title ? `Épisode ${number ?? ''} de ${title}`.replace('  ', ' ') : 'Nouvel épisode'
-    case 'NEW_CHAPTER':
-      return title ? `Chapitre ${number ?? ''} de ${title}`.replace('  ', ' ') : 'Nouveau chapitre'
-    case 'COMMENT_REPLY':
-      return payload.author
-        ? `${payload.author} a répondu à votre commentaire`
-        : 'Réponse à votre commentaire'
+    case 'NEW_EPISODE': {
+      if (!title) return number ? `Nouvel épisode ${number}` : 'Nouvel épisode'
+      return number ? `Épisode ${number} de ${title}` : `Nouvel épisode de ${title}`
+    }
+    case 'NEW_CHAPTER': {
+      if (!title) return number ? `Nouveau chapitre ${number}` : 'Nouveau chapitre'
+      return number ? `Chapitre ${number} de ${title}` : `Nouveau chapitre de ${title}`
+    }
+    case 'COMMENT_REPLY': {
+      const author = text(payload, 'authorUsername') ?? text(payload, 'author')
+      const excerpt = text(payload, 'excerpt')
+      const who = author ? `${author} a répondu à votre commentaire` : 'Réponse à votre commentaire'
+      return excerpt ? `${who} : « ${excerpt} »` : who
+    }
     case 'RECOMMENDATION':
       return title ? `Recommandé pour vous : ${title}` : 'Nouvelle recommandation'
-    default:
+    default: {
+      // SYSTEM : soit un message libre, soit un compte rendu de campagne
+      // d'import (`{"event":"catalogue.chapters.derived","created":13536,…}`).
+      const message = text(payload, 'message')
+      if (message) return message
+      const event = text(payload, 'event')
+      const created = text(payload, 'created')
+      if (event) return created ? `${event} — ${created} entrées créées` : event
       return NOTIFICATION_LABELS[type]
+    }
   }
 }
 
-/** Derives an in-app route from whatever IRI the payload happens to carry. */
+/**
+ * Déduit une route interne de l'IRI que porte le payload.
+ *
+ * `NEW_EPISODE` transporte `animeIri`, produite par l'`IriConverter` du
+ * backend : elle reste exacte si la route bouge. `COMMENT_REPLY` ne porte que
+ * des IRIs de commentaire, sans le média auquel il se rattache — impossible
+ * d'en dériver une page, et fabriquer un lien approximatif serait pire que
+ * pas de lien. La notification reste lisible grâce à l'extrait.
+ */
 function linkFor(payload: Record<string, string | null>): string | null {
-  const candidates = [payload.animeIri, payload.anime, payload.mangaIri, payload.manga, payload.iri]
+  const candidates = [
+    text(payload, 'animeIri'),
+    text(payload, 'anime'),
+    text(payload, 'mangaIri'),
+    text(payload, 'manga'),
+    text(payload, 'iri'),
+  ]
   for (const candidate of candidates) {
     if (!candidate) continue
     const id = idFromIri(candidate)
