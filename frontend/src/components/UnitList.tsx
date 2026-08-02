@@ -381,10 +381,17 @@ function markInput(
 
   const reached = total !== null && total > 0 && target >= total
   const previousStatus = entry?.status ?? null
+
+  // Reculer sous le total sur un titre `COMPLETED` le rend incohérent — et
+  // depuis que le backend valide la règle, c'est un 422 en pleine figure sur un
+  // simple décochage. Le statut redescend donc à « en cours », qui est
+  // exactement ce que le geste veut dire.
+  const leavesCompleted = previousStatus === 'COMPLETED' && !reached
+
   const status =
     reached && !seen
       ? ('COMPLETED' as const)
-      : previousStatus === null || previousStatus === 'PLANNED'
+      : leavesCompleted || previousStatus === null || previousStatus === 'PLANNED'
         ? ('WATCHING' as const)
         : previousStatus
 

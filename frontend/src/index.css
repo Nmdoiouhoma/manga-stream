@@ -731,6 +731,22 @@ code {
   font-weight: 500;
 }
 
+.field__hint {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+/* Champ piloté par un autre champ (« Terminé » ⟹ progression = total). Grisé
+   comme un champ inactif, mais `readonly` et non `disabled` : il reste
+   focalisable et annoncé, sans quoi personne au clavier ne saurait pourquoi il
+   affiche cette valeur. */
+.input.is-locked {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -760,6 +776,30 @@ code {
   border-color: rgba(251, 191, 36, 0.4);
   background: rgba(251, 191, 36, 0.09);
   color: #fde3a7;
+}
+
+/* Proposition, pas injonction : ton neutre, et une sortie explicite. */
+.notice--suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.notice__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.form__error-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .muted {

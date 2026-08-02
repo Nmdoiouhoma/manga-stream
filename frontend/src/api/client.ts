@@ -94,15 +94,57 @@ const authMiddleware: Middleware = {
 
 apiClient.use(authMiddleware)
 
+/**
+ * Une violation de validation, telle que le contrat la décrit dans
+ * `ConstraintViolation` (`422`). `propertyPath` est le champ visé
+ * ("currentEpisode"), `message` la phrase produite par le validateur Symfony.
+ */
+export type Violation = { propertyPath: string; message: string }
+
 /** Thrown when the API answers with a non-2xx status. */
 export class ApiError extends Error {
   readonly status?: number
+  /**
+   * Violations d'un 422, vide sinon.
+   *
+   * Elles sont conservées à part du `message` parce qu'un formulaire veut les
+   * rattacher à leurs champs, alors qu'un affichage générique se contente du
+   * message agrégé. Sans ça, le seul recours serait de re-parser `detail`,
+   * qui n'est qu'une concaténation « champ: message ».
+   */
+  readonly violations: Violation[]
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, violations: Violation[] = []) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.violations = violations
   }
+}
+
+/**
+ * Extrait les violations d'un corps d'erreur 422.
+ *
+ * Défensif de bout en bout : le corps vient du réseau, `violations` peut être
+ * absent, ne pas être un tableau, ou contenir des entrées incomplètes. Une
+ * entrée sans `message` exploitable est écartée plutôt que rendue « undefined ».
+ */
+function readViolations(error: unknown): Violation[] {
+  if (typeof error !== 'object' || error === null || !('violations' in error)) return []
+  const raw = (error as { violations: unknown }).violations
+  if (!Array.isArray(raw)) return []
+
+  return raw.flatMap((item): Violation[] => {
+    if (typeof item !== 'object' || item === null) return []
+    const { propertyPath, message } = item as { propertyPath?: unknown; message?: unknown }
+    if (typeof message !== 'string' || message.trim() === '') return []
+    return [
+      {
+        propertyPath: typeof propertyPath === 'string' ? propertyPath : '',
+        message: message.trim(),
+      },
+    ]
+  })
 }
 
 /**
@@ -136,11 +178,24 @@ function humanizeDetail(detail: string, status: number): string {
 export function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
   if (result.error || result.data === undefined) {
     const { status } = result.response
+    const violations = readViolations(result.error)
     const raw =
       typeof result.error === 'object' && result.error !== null && 'detail' in result.error
         ? String((result.error as { detail: unknown }).detail)
         : null
-    throw new ApiError(raw ? humanizeDetail(raw, status) : `La requête a échoué (${status}).`, status)
+
+    // Sur un 422, les violations sont la formulation la plus lisible : le
+    // `detail` d'API Platform les concatène avec leur chemin de propriété
+    // ("currentEpisode: L'épisode ne peut pas dépasser…"), ce qui expose un nom
+    // de champ interne à l'utilisateur.
+    const message =
+      violations.length > 0
+        ? violations.map((violation) => violation.message).join(' ')
+        : raw
+          ? humanizeDetail(raw, status)
+          : `La requête a échoué (${status}).`
+
+    throw new ApiError(message, status, violations)
   }
   return result.data
 }

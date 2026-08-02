@@ -190,6 +190,79 @@ function problem(status: number, detail: string, id = '/api/errors') {
 const notFound = (basePath: string) => problem(404, 'Not Found', basePath)
 const unauthorized = () => problem(401, 'JWT Token not found', '/api/errors/401')
 
+/**
+ * Réponse 422 au format `ConstraintViolationList` du contrat — pas le `problem`
+ * générique : le front lit `violations[]` pour rattacher chaque message à son
+ * champ, et une erreur mockée sans ce tableau ne testerait pas ce chemin.
+ */
+function violationProblem(violations: Array<{ propertyPath: string; message: string }>) {
+  return HttpResponse.json(
+    {
+      '@context': '/api/contexts/ConstraintViolationList',
+      '@id': '/api/validation_errors',
+      '@type': 'ConstraintViolationList',
+      status: 422,
+      title: 'An error occurred',
+      detail: violations.map((v) => `${v.propertyPath}: ${v.message}`).join('\n'),
+      violations,
+    },
+    { status: 422, headers: LD_JSON },
+  )
+}
+
+/**
+ * Cohérence statut / progression, telle que le backend la valide en parallèle.
+ *
+ * Mocké ici pour que le front puisse vérifier son rendu du 422 sans dépendre du
+ * calendrier du backend. La règle : `COMPLETED` exige la progression au total,
+ * et la progression ne peut dépasser le total. Un total inconnu ne valide rien
+ * — c'est le cas fréquent des séries en cours.
+ */
+function coherenceViolations(input: {
+  status: string | null | undefined
+  current: number | null
+  total: number | null
+  isAnime: boolean
+}): Array<{ propertyPath: string; message: string }> {
+  const { status, current, total, isAnime } = input
+  if (total === null || total <= 0) return []
+
+  const field = isAnime ? 'currentEpisode' : 'currentChapter'
+  const noun = isAnime ? 'épisode' : 'chapitre'
+  const out: Array<{ propertyPath: string; message: string }> = []
+
+  if (current !== null && current > total) {
+    out.push({
+      propertyPath: field,
+      message: `Le ${noun} courant (${current}) dépasse le total de ce titre (${total}).`,
+    })
+  }
+  if (status === 'COMPLETED' && (current === null || current < total)) {
+    out.push({
+      propertyPath: field,
+      message: `Un titre marqué comme terminé doit être au ${noun} ${total}.`,
+    })
+  }
+  return out
+}
+
+/** `currentChapter` circule en string ("12.50") ; le total est un entier. */
+function numberOrNull(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string' || value.trim() === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/** Total annoncé par la fiche visée, `null` quand l'import ne l'a pas fourni. */
+function totalOf(target: {
+  kind: 'anime' | 'manga'
+  ref: { episodeCount?: number | null; chapterCount?: number | null } | null
+}): number | null {
+  if (!target.ref) return null
+  return (target.kind === 'anime' ? target.ref.episodeCount : target.ref.chapterCount) ?? null
+}
+
 function filterGenres(collection: Genre[], search: URLSearchParams): Genre[] {
   const name = search.get('name')
   const slugs = multiParam(search, 'slug')
@@ -625,6 +698,17 @@ export const handlers = [
     const target = mediaRefFor(targetIri)
     if (!target) return problem(422, `Ressource inconnue : ${targetIri}`)
 
+    const isAnime = target.kind === 'anime'
+    const violations = coherenceViolations({
+      status: body.status as string | null,
+      current: isAnime
+        ? ((body.currentEpisode as number | null) ?? null)
+        : numberOrNull(body.currentChapter),
+      total: totalOf(target),
+      isAnime,
+    })
+    if (violations.length > 0) return violationProblem(violations)
+
     const id = takeId()
     const entry = {
       '@id': `/api/progress/${id}`,
@@ -664,6 +748,32 @@ export const handlers = [
     if (ownerIriOf(entry) !== user['@id']) return problem(403, 'Accès refusé.')
 
     const body = (await request.json()) as Record<string, unknown>
+
+    // Merge-patch : la validation porte sur l'état **résultant**, pas sur le
+    // seul corps envoyé. Un PATCH qui ne change que le statut doit être refusé
+    // s'il rend l'entrée incohérente avec la progression déjà stockée.
+    const isAnime = Boolean(entry.anime)
+    const merged = {
+      status: ('status' in body ? body.status : entry.status) as string,
+      currentEpisode: ('currentEpisode' in body
+        ? body.currentEpisode
+        : entry.currentEpisode) as number | null,
+      currentChapter: ('currentChapter' in body
+        ? body.currentChapter
+        : entry.currentChapter) as string | null,
+    }
+    const violations = coherenceViolations({
+      status: merged.status,
+      current: isAnime ? merged.currentEpisode : numberOrNull(merged.currentChapter),
+      total: totalOf(
+        isAnime
+          ? { kind: 'anime', ref: entry.anime as { episodeCount?: number | null } }
+          : { kind: 'manga', ref: entry.manga as { chapterCount?: number | null } },
+      ),
+      isAnime,
+    })
+    if (violations.length > 0) return violationProblem(violations)
+
     if ('status' in body) entry.status = body.status as MockProgress['status']
     if ('currentEpisode' in body) entry.currentEpisode = body.currentEpisode as number | null
     if ('currentChapter' in body) entry.currentChapter = body.currentChapter as string | null
