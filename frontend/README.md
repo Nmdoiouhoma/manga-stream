@@ -202,26 +202,71 @@ The API follows AniList conventions, which are not the obvious ones:
 
 The bell subscribes to the Mercure hub over SSE (`src/hooks/useMercure.ts`) and
 invalidates the notifications query on any push. **It is strictly a bonus**: with no
-hub, the bell still works — it refreshes when opened.
+hub, no subscriber token, or an unreachable hub, the bell still works — it refreshes
+when opened. The panel shows the connection state.
 
 `EventSource` reconnects natively every ~3 s, forever, with no backoff. Against a
 dead hub that is a request every 3 s for as long as the tab is open, so the hook
 takes over: it `close()`s on the first error and drives reconnection itself with
 **exponential backoff + jitter (1 s → 30 s)**, gives up after 6 consecutive
 failures (`status: 'unavailable'`, one `console.warn`, not one per attempt), and
-pauses entirely while the tab is hidden. The panel shows the connection state.
+pauses entirely while the tab is hidden.
 
-### Topics are a spread bet — narrow them once the backend decides
+### The chain, end to end
 
-The backend has **not** frozen its publishing convention, so `mercureTopicsFor()`
-subscribes to three candidates: `{origin}{userIri}`, `{userIri}`, and
-`{origin}/api/notifications/{id}` (an RFC 6570 template).
+The hub runs with `MERCURE_ALLOW_ANONYMOUS=false`: every subscriber must present a
+JWT whose `mercure.subscribe` claim lists the topics it may read. **The frontend does
+not mint that token** — it could not without holding the HS256 secret. The backend
+issues it, scoped to one topic:
 
-That last one is **not user-scoped**. With a hub open to anonymous subscribers, a
-browser can therefore receive other users' notification events.
-`useNotificationStream` drops any message whose `user` is not the current one, but
-the payload still reaches the client. Override with `VITE_MERCURE_TOPICS` and
-narrow this as soon as the backend states its convention.
+```
+POST /api/login  ->  { "token": "<API JWT>",
+                       "mercure": { "hubUrl": "…", "topic": "/api/users/16/notifications",
+                                    "token": "<subscriber JWT>" } }
+GET  /api/mercure/subscription  ->  the same object, for renewal
+```
+
+The subscriber JWT expires independently of the API JWT, so `useNotificationStream`
+refreshes it on a timer derived from its own `exp` (not a fixed interval): waking up
+*after* the hub cut the connection would lose events.
+
+**Topic convention** — `/api/users/{id}/notifications`, frozen by the backend in
+`App\Service\Notification\NotificationTopics`. One topic per user, no generic
+channel, and every update published `private: true`. That last part is the load-bearing
+one: a *public* update is broadcast to every subscriber of the topic whatever their
+JWT says, so restricting subscriptions alone would cloister nothing.
+
+When a subscription is available the topic comes from the backend — it is then
+consistent by construction with the token's claim. `mercureTopicsFor()` in
+`config.ts` is only the fallback, and it still refuses any topic not scoped by
+`{userIri}`/`{userId}` (the phase-2 catch-all topic was removed and must not come back).
+
+### Handing the token to `EventSource`
+
+`EventSource` accepts no headers, so `Authorization: Bearer` is out. Two options,
+which are not equivalent:
+
+1. **cookie `mercureAuthorization`** + `withCredentials: true` — the recommended
+   route, and what the infra wired (the hub answers
+   `Access-Control-Allow-Credentials: true` for `http://localhost:5173`). The token
+   appears in no URL and no access log. A JS-set cookie only reaches hosts on the
+   same *site*; ports do not count, so `localhost:5173` → `localhost:3000` works.
+2. **`?authorization=<jwt>`** — accepted by the hub, used **only** when the hub is on
+   another site and the cookie cannot reach it. It puts a bearer token in a URL:
+   proxy logs, history, `Referer`. Setting the cookie from the backend via
+   `Set-Cookie` would be the real fix for that deployment shape.
+
+The cookie is cleared on logout and on session expiry — it is a bearer token.
+
+### Verified, not assumed
+
+Phase 2 only proved the transport with a self-forged token. This was checked against
+the running stack on 2026-08-02:
+
+- subscribed with the **backend-issued** token, had a second account reply to a
+  comment, and received the `COMMENT_REPLY` notification — an event actually
+  published by the backend;
+- counter-test: account B's token, subscribing to A's topic, receives **nothing**.
 
 ## Structure
 
@@ -237,13 +282,17 @@ src/
     progress.ts    # watch/read progress (decimal chapter handling lives here)
     comments.ts    # thread rebuilt client-side from `parent`
     notifications.ts
+    recommendations.ts # suggestions + defensive `reason` parsing
+    mercure.ts     # subscriber token: read, renew, hand to EventSource
   auth/
     session.ts     # framework-free session store (localStorage, JWT decode, 401 guard)
     context.ts     # context object + value type (kept apart for fast refresh)
     AuthContext.tsx / useAuth.ts / RequireAuth.tsx
   components/
-    MediaCard.tsx · FilterBar.tsx · FavoriteButton.tsx
+    MediaCard.tsx · FilterBar.tsx · FavoriteButton.tsx · WatchlistButton.tsx
     ProgressPanel.tsx · CommentThread.tsx · NotificationBell.tsx
+    UnitList.tsx   # episodes/chapters: chunking + missing-data fallbacks
+    RecommendationCard.tsx
   hooks/
     useDebouncedValue.ts · useMercure.ts · useNotificationStream.ts
   mocks/
@@ -253,7 +302,7 @@ src/
     browser.ts     # worker bootstrap (dev only)
   pages/
     CatalogPage · MediaDetailPage · LoginPage · RegisterPage
-    FavoritesPage · ProfilePage · NotFoundPage
+    FavoritesPage · RecommendationsPage · ProfilePage · NotFoundPage
   types/media.ts   # domain types derived from the generated schema
   config.ts        # env-driven runtime config
 ```
@@ -268,6 +317,7 @@ src/
 | `/login`      | public                                                          |
 | `/register`   | public                                                          |
 | `/favorites`  | **protected** (`RequireAuth`)                                   |
+| `/recommendations` | **protected** — suggestions ranked by score, with the reason spelled out |
 | `/profile`    | **protected** (`RequireAuth`)                                   |
 | `*`           | 404                                                             |
 
