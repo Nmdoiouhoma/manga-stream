@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { RateLimitError, requestPasswordReset } from '../api/password'
+import { requestPasswordReset } from '../api/password'
 
 /**
  * « Mot de passe oublié ? » — demande d'un email de réinitialisation.
@@ -35,14 +35,9 @@ export function PasswordForgotPage() {
       await requestPasswordReset(email.trim())
       setSent(true)
     } catch (caught) {
-      // `RateLimitError` porte déjà le délai de `Retry-After` dans son message.
-      setError(
-        caught instanceof RateLimitError
-          ? caught.message
-          : caught instanceof Error
-            ? caught.message
-            : 'La demande a échoué.',
-      )
+      // Le message est déjà présentable : un 429 arrive en `RateLimitError`,
+      // qui porte le délai de `Retry-After` dans sa phrase.
+      setError(caught instanceof Error ? caught.message : 'La demande a échoué.')
     } finally {
       setPending(false)
     }

@@ -27,47 +27,8 @@
  * par une erreur. Elle ne renvoie rien.
  */
 import { API_BASE_URL } from '../config'
-import { ApiError } from './client'
-
-/** Levée sur un 429. Porte le délai d'attente quand le serveur le donne. */
-export class RateLimitError extends ApiError {
-  /** Secondes à attendre, d'après `Retry-After`. `null` si l'en-tête manque. */
-  readonly retryAfterSeconds: number | null
-
-  constructor(message: string, retryAfterSeconds: number | null) {
-    super(message, 429)
-    this.name = 'RateLimitError'
-    this.retryAfterSeconds = retryAfterSeconds
-  }
-}
-
-/**
- * Lit `Retry-After`, qui a deux formes légales (RFC 9110) : un nombre de
- * secondes, ou une date HTTP. Les deux sont acceptées ; tout le reste donne
- * `null` plutôt qu'un `NaN` qui finirait affiché.
- */
-export function parseRetryAfter(header: string | null): number | null {
-  if (!header) return null
-  const raw = header.trim()
-  if (raw === '') return null
-
-  if (/^\d+$/.test(raw)) {
-    const seconds = Number(raw)
-    return Number.isFinite(seconds) ? seconds : null
-  }
-
-  const date = Date.parse(raw)
-  if (Number.isNaN(date)) return null
-  // Un délai passé (horloges désynchronisées) vaut « réessayez maintenant ».
-  return Math.max(0, Math.round((date - Date.now()) / 1000))
-}
-
-/** « 45 secondes », « 2 minutes » — un délai brut en secondes se lit mal. */
-export function formatRetryDelay(seconds: number): string {
-  if (seconds < 60) return `${Math.max(1, seconds)} seconde${seconds > 1 ? 's' : ''}`
-  const minutes = Math.ceil(seconds / 60)
-  return `${minutes} minute${minutes > 1 ? 's' : ''}`
-}
+import { ApiError, RateLimitError } from './client'
+import { parseRetryAfter, rateLimitMessage } from '../lib/retryAfter'
 
 type ProblemBody = {
   detail?: unknown
@@ -95,12 +56,7 @@ async function readProblem(response: Response): Promise<ProblemBody> {
 async function toError(response: Response, fallback: string): Promise<ApiError> {
   if (response.status === 429) {
     const seconds = parseRetryAfter(response.headers.get('Retry-After'))
-    return new RateLimitError(
-      seconds !== null
-        ? `Trop de tentatives. Réessayez dans ${formatRetryDelay(seconds)}.`
-        : 'Trop de tentatives. Réessayez dans quelques minutes.',
-      seconds,
-    )
+    return new RateLimitError(rateLimitMessage(seconds), seconds)
   }
 
   const problem = await readProblem(response)

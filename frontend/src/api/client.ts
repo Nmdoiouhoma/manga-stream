@@ -17,6 +17,7 @@
 import createClient, { type Middleware } from 'openapi-fetch'
 import type { paths } from './schema'
 import { API_BASE_URL } from '../config'
+import { parseRetryAfter, rateLimitMessage } from '../lib/retryAfter'
 import { getSession, isTokenExpired, notifyUnauthorized, setSession } from '../auth/session'
 
 /** The single media type this app speaks. Keep the header and the generic in sync. */
@@ -123,6 +124,26 @@ export class ApiError extends Error {
 }
 
 /**
+ * Levée sur un 429. Porte le délai d'attente quand le serveur le donne.
+ *
+ * Le backend limite le débit sur la connexion, l'inscription et la demande de
+ * réinitialisation, et joint systématiquement un `Retry-After` (voir
+ * `App\Security\ThrottleResponse`). Sans cette classe, l'information se
+ * perdrait dans un message générique et l'utilisateur réessaierait au hasard —
+ * ce qui aggrave précisément ce que la limitation cherche à contenir.
+ */
+export class RateLimitError extends ApiError {
+  /** Secondes à attendre, d'après `Retry-After`. `null` si l'en-tête manque. */
+  readonly retryAfterSeconds: number | null
+
+  constructor(message: string, retryAfterSeconds: number | null) {
+    super(message, 429)
+    this.name = 'RateLimitError'
+    this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
+/**
  * Extrait les violations d'un corps d'erreur 422.
  *
  * Défensif de bout en bout : le corps vient du réseau, `violations` peut être
@@ -178,6 +199,15 @@ function humanizeDetail(detail: string, status: number): string {
 export function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
   if (result.error || result.data === undefined) {
     const { status } = result.response
+
+    // Traité ici plutôt qu'à chaque appel : le backend peut limiter n'importe
+    // quel endpoint, et un 429 non reconnu s'afficherait « La requête a échoué
+    // (429) », sans le délai que le serveur vient pourtant de donner.
+    if (status === 429) {
+      const seconds = parseRetryAfter(result.response.headers.get('Retry-After'))
+      throw new RateLimitError(rateLimitMessage(seconds, ''), seconds)
+    }
+
     const violations = readViolations(result.error)
     const raw =
       typeof result.error === 'object' && result.error !== null && 'detail' in result.error

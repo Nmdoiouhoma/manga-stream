@@ -509,32 +509,46 @@ function round4(value: number): number {
 /** Jetons émis, par valeur. Vidés au rechargement : c'est un mock. */
 const resetTokens = new Map<string, { email: string; expiresAt: number }>()
 
-const RATE_LIMIT_MAX = 3
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 const rateLimitHits = new Map<string, number[]>()
 
 /**
- * Limitation de débit, comme celle que le backend ajoute sur `forgot`.
+ * Limitation de débit en fenêtre glissante, comme les limiteurs livrés côté
+ * backend le 2026-08-02 (`config/packages/rate_limiter.yaml`, relu pour caler
+ * ces valeurs).
  *
  * Mockée parce que le 429 est un chemin d'interface à part entière — il porte
- * un `Retry-After` que la page doit lire et traduire — et qu'on ne peut pas le
- * déclencher à la demande sur un backend réel sans se bloquer soi-même.
+ * un `Retry-After` que les pages doivent lire et traduire — et qu'on ne peut
+ * pas le déclencher à la demande sur un backend réel sans se bloquer soi-même
+ * pour un quart d'heure.
  *
  * @returns le nombre de secondes à attendre, ou `null` si la requête passe.
  */
-function rateLimit(key: string): number | null {
+function rateLimit(key: string, max: number, windowMs: number): number | null {
   const now = Date.now()
-  const hits = (rateLimitHits.get(key) ?? []).filter((at) => now - at < RATE_LIMIT_WINDOW_MS)
+  const hits = (rateLimitHits.get(key) ?? []).filter((at) => now - at < windowMs)
 
-  if (hits.length >= RATE_LIMIT_MAX) {
+  if (hits.length >= max) {
     rateLimitHits.set(key, hits)
     const oldest = hits[0] ?? now
-    return Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MS - (now - oldest)) / 1000))
+    return Math.max(1, Math.ceil((windowMs - (now - oldest)) / 1000))
   }
 
   hits.push(now)
   rateLimitHits.set(key, hits)
   return null
+}
+
+const MINUTE = 60 * 1000
+/** ~5 essais / 15 min sur la connexion, 5 demandes / heure sur `forgot`. */
+const LOGIN_LIMIT = { max: 5, window: 15 * MINUTE }
+const FORGOT_LIMIT = { max: 5, window: 60 * MINUTE }
+
+/** Réponse 429 avec l'en-tête que le front lit. Corps lexik pour la connexion. */
+function tooManyRequests(seconds: number, shape: 'lexik' | 'problem') {
+  const headers = { 'Retry-After': String(seconds) }
+  return shape === 'lexik'
+    ? HttpResponse.json({ code: 429, message: 'Trop de tentatives.' }, { status: 429, headers })
+    : new HttpResponse(null, { status: 429, headers })
 }
 
 export const handlers = [
@@ -546,6 +560,15 @@ export const handlers = [
     const user = findUserByEmail(body.email ?? '')
 
     if (!user || passwords.get(user.email) !== body.password) {
+      // Seuls les échecs sont comptés, comme le fait le backend : sinon une
+      // session de développement normale finirait bloquée en cinq connexions.
+      const wait = rateLimit(
+        `login:${body.email ?? ''}`,
+        LOGIN_LIMIT.max,
+        LOGIN_LIMIT.window,
+      )
+      if (wait !== null) return tooManyRequests(wait, 'lexik')
+
       // The real backend answers 401 with a Lexik-shaped body.
       return HttpResponse.json({ code: 401, message: 'Invalid credentials.' }, { status: 401 })
     }
@@ -597,12 +620,10 @@ export const handlers = [
 
     if (email === '') return problem(422, 'email est requis.')
 
-    const wait = rateLimit(`forgot:${email}`)
-    if (wait !== null) {
-      // Le vrai en-tête, pas un corps d'erreur : c'est `Retry-After` que le
-      // front lit pour annoncer le délai.
-      return new HttpResponse(null, { status: 429, headers: { 'Retry-After': String(wait) } })
-    }
+    // Le vrai en-tête, pas un corps d'erreur : c'est `Retry-After` que le
+    // front lit pour annoncer le délai.
+    const wait = rateLimit(`forgot:${email}`, FORGOT_LIMIT.max, FORGOT_LIMIT.window)
+    if (wait !== null) return tooManyRequests(wait, 'problem')
 
     const user = findUserByEmail(email)
     if (user) {

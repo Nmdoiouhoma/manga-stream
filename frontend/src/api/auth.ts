@@ -14,7 +14,8 @@
  * contract now marks it `@deprecated`, so registration goes through
  * `/api/register`.
  */
-import { apiClient, ApiError, jsonApiClient, unwrap } from './client'
+import { apiClient, ApiError, jsonApiClient, RateLimitError, unwrap } from './client'
+import { parseRetryAfter, rateLimitMessage } from '../lib/retryAfter'
 import { subscriptionFromLogin } from './mercure'
 import type { Session, SessionUser } from '../auth/session'
 import type { components } from './schema'
@@ -101,6 +102,15 @@ export async function login({ email, password }: Credentials): Promise<Session> 
     // middleware l'ignore délibérément (la requête ne porte aucun en-tête
     // `Authorization`) : traduire l'erreur revient donc à cette fonction.
     if (status === 401) throw new ApiError('Identifiants invalides.', 401)
+
+    // 429 : le backend limite le débit des tentatives de connexion depuis le
+    // 2026-08-02 et joint un `Retry-After`. Cette fonction n'utilise pas
+    // `unwrap()` — qui traite déjà le cas — parce que le corps d'erreur de
+    // lexik n'a pas la forme d'API Platform ; le 429 doit donc être repris ici.
+    if (status === 429) {
+      const seconds = parseRetryAfter(result.response.headers.get('Retry-After'))
+      throw new RateLimitError(rateLimitMessage(seconds, 'de connexion'), seconds)
+    }
     // Le 400 est du RFC 7807 et porte un `detail` exploitable ; le 401 est au
     // format lexik et n'en a pas. Les deux formes sont lues sans supposer
     // laquelle est arrivée.
