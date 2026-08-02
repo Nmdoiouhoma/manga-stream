@@ -20,6 +20,12 @@ parameters:
     # `GET /api/mercure/subscription`.
     app.mercure.subscriber_ttl: '%env(int:JWT_TTL)%'
 
+    # Base des liens envoyés par e-mail. Le frontend sert /password/reset, pas
+    # l'API : construire ces liens depuis DEFAULT_URI donnerait un lien mort le
+    # jour où les deux ne partagent plus la même origine.
+    app.frontend_url: '%env(default:app.default_frontend_url:FRONTEND_BASE_URL)%'
+    app.default_frontend_url: 'http://localhost:8000'
+
 services:
     # default configuration for services in *this* file
     _defaults:

@@ -17,6 +17,12 @@ framework:
         routing:
             App\Message\SyncAnilistPage: async
             App\Message\SyncAnilistEpisodes: async
+            # E-mails transactionnels. Expédiés par le worker, jamais dans la
+            # requête HTTP : un relais SMTP lent ou injoignable ferait pendre
+            # `POST /api/password/forgot`, et son temps de réponse varierait selon
+            # que l'adresse existe ou non — ce qui rétablirait l'oracle
+            # d'énumération que son 204 systématique supprime.
+            Symfony\Component\Mailer\Messenger\SendEmailMessage: async
 
 when@test:
     framework:

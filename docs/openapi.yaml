@@ -4575,6 +4575,162 @@ paths:
             schema:
               $ref: '#/components/schemas/Notification-notification.write.jsonMergePatch'
         required: true
+  /api/password/forgot:
+    post:
+      operationId: api_passwordforgot_post
+      tags:
+        - PasswordForgot
+      responses:
+        '204':
+          description: 'PasswordForgot resource created'
+          links: {}
+        '400':
+          description: 'Invalid input'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
+        '422':
+          description: 'An error occurred'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+        '429':
+          description: |-
+            Trop de requêtes. Quota : 5 demandes par heure et par adresse IP. Une limite distincte, par adresse e-mail visée, coupe l'envoi du message sans changer le statut de la réponse.
+
+            L'en-tête `Retry-After` donne le délai d'attente EN SECONDES ; il est toujours présent.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type: { type: string, example: 'https://tools.ietf.org/html/rfc6585#section-4' }
+                  title: { type: string, example: 'An error occurred' }
+                  status: { type: integer, example: 429 }
+                  detail: { type: string, example: 'Trop de comptes créés depuis cette adresse. Réessayez plus tard.' }
+          headers:
+            Retry-After:
+              description: 'Délai avant nouvelle tentative, en secondes.'
+              schema:
+                type: integer
+                example: 900
+      summary: 'Demande un e-mail de réinitialisation de mot de passe.'
+      description: |-
+        Répond **204 quelle que soit l'adresse envoyée**, existante ou non.
+        C'est délibéré : distinguer les deux cas transformerait l'endpoint en
+        oracle d'énumération des comptes. Le client ne doit donc jamais
+        afficher « adresse inconnue ».
+
+        L'e-mail part en tâche de fond (Messenger) : la réponse n'attend pas
+        le serveur SMTP. Le lien reste valide **une heure** et ne sert
+        **qu'une fois** ; toute demande antérieure encore en vol est
+        invalidée.
+
+        Limité en débit — voir la réponse `429`.
+      parameters: []
+      requestBody:
+        description: 'The new PasswordForgot resource'
+        content:
+          application/ld+json:
+            schema:
+              $ref: '#/components/schemas/PasswordForgot-password.forgot'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordForgot-password.forgot'
+        required: true
+  /api/password/reset:
+    post:
+      operationId: api_passwordreset_post
+      tags:
+        - PasswordReset
+      responses:
+        '204':
+          description: 'PasswordReset resource created'
+          links: {}
+        '400':
+          description: 'Invalid input'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Error.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          links: {}
+        '422':
+          description: 'An error occurred'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation.jsonld'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConstraintViolation'
+          links: {}
+        '429':
+          description: |-
+            Trop de requêtes. Quota : 5 tentatives par heure et par adresse IP.
+
+            L'en-tête `Retry-After` donne le délai d'attente EN SECONDES ; il est toujours présent.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type: { type: string, example: 'https://tools.ietf.org/html/rfc6585#section-4' }
+                  title: { type: string, example: 'An error occurred' }
+                  status: { type: integer, example: 429 }
+                  detail: { type: string, example: 'Trop de comptes créés depuis cette adresse. Réessayez plus tard.' }
+          headers:
+            Retry-After:
+              description: 'Délai avant nouvelle tentative, en secondes.'
+              schema:
+                type: integer
+                example: 900
+      summary: "Pose un nouveau mot de passe à partir d'un jeton reçu par e-mail."
+      description: |-
+        Le jeton est à usage unique et expire au bout d'une heure. Un jeton
+        inconnu, déjà consommé ou expiré donne un **422** — sans jamais
+        préciser lequel des trois, faute de quoi le message renseignerait un
+        attaquant sur l'état des jetons en circulation.
+
+        Le succès invalide le jeton ET toutes les autres demandes en cours
+        pour ce compte.
+
+        Limité en débit — voir la réponse `429`.
+      parameters: []
+      requestBody:
+        description: 'The new PasswordReset resource'
+        content:
+          application/ld+json:
+            schema:
+              $ref: '#/components/schemas/PasswordReset-password.reset'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordReset-password.reset'
+        required: true
   /api/progress:
     get:
       operationId: api_progress_get_collection
@@ -10360,6 +10516,39 @@ components:
           required:
             - type
       description: 'Notification utilisateur.'
+    PasswordForgot-password.forgot:
+      type: object
+      description: 'Envoie un lien de réinitialisation si un compte correspond.'
+      required:
+        - email
+      properties:
+        email:
+          format: email
+          externalDocs:
+            url: 'https://schema.org/email'
+          example: utilisateur@example.com
+          type:
+            - string
+            - 'null'
+    PasswordReset-password.reset:
+      type: object
+      description: 'Réinitialise le mot de passe associé au jeton.'
+      required:
+        - token
+        - plainPassword
+      properties:
+        token:
+          description: "Jeton brut reçu par e-mail, tel qu'il figure dans le lien."
+          type:
+            - string
+            - 'null'
+        plainPassword:
+          minLength: 8
+          maxLength: 4096
+          description: 'Nouveau mot de passe en clair.'
+          type:
+            - string
+            - 'null'
     Progress-progress.read:
       type: object
       description: |-
@@ -11179,6 +11368,11 @@ components:
           type:
             - string
             - 'null'
+        currentPassword:
+          description: 'Mot de passe actuel, obligatoire pour modifier `plainPassword` sur son propre compte (écriture seule).'
+          type:
+            - string
+            - 'null'
     User-user.write.jsonMergePatch:
       type: object
       description: 'Compte utilisateur.'
@@ -11199,6 +11393,11 @@ components:
           minLength: 8
           maxLength: 4096
           description: 'Mot de passe en clair (écriture seule).'
+          type:
+            - string
+            - 'null'
+        currentPassword:
+          description: 'Mot de passe actuel, obligatoire pour modifier `plainPassword` sur son propre compte (écriture seule).'
           type:
             - string
             - 'null'
@@ -11446,6 +11645,26 @@ security:
 tags:
   - name: MercureSubscription
     description: "Paramètres d'abonnement au hub Mercure pour l'utilisateur authentifié."
+  - name: PasswordForgot
+    description: |-
+      Demande d'un lien de réinitialisation.
+
+      Répond **204 dans tous les cas**, y compris pour une adresse inconnue. Ce n'est pas
+      une approximation : renvoyer 404 sur une adresse absente ferait de cet endpoint un
+      oracle d'énumération. Quelques milliers de requêtes suffiraient alors à extraire la
+      liste des comptes du site — une information qui alimente ensuite le hameçonnage
+      ciblé et le bourrage d'identifiants.
+
+      Le corollaire est que le client ne peut RIEN déduire de la réponse, et ne doit donc
+      jamais afficher « adresse inconnue ». Le message correct est invariablement « si un
+      compte existe pour cette adresse, un e-mail vient d'être envoyé ».
+  - name: PasswordReset
+    description: |-
+      Consommation d'un jeton de réinitialisation.
+
+      Le jeton prouve la possession de la boîte mail : c'est lui qui remplace le mot de
+      passe courant exigé partout ailleurs pour un changement de mot de passe
+      ({@see \App\Validator\CurrentPasswordRequired}).
   - name: Anime
     description: 'Série animée du catalogue.'
   - name: Chapter

@@ -1,3 +1,10 @@
 framework:
     mailer:
         dsn: '%env(MAILER_DSN)%'
+        # Expéditeur commun à tous les messages transactionnels, posé une fois ici
+        # plutôt que répété dans chaque service : une seule ligne à changer le jour
+        # où le domaine d'envoi change.
+        envelope:
+            sender: '%env(MAILER_FROM)%'
+        headers:
+            from: '%env(MAILER_FROM)%'

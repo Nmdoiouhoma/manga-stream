@@ -8,6 +8,7 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\State\ProcessorInterface;
 use App\Entity\User;
+use App\Repository\PasswordResetTokenRepository;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
@@ -27,6 +28,7 @@ final readonly class UserPasswordHasherProcessor implements ProcessorInterface
         #[Autowire(service: 'api_platform.doctrine.orm.state.persist_processor')]
         private ProcessorInterface $persistProcessor,
         private UserPasswordHasherInterface $passwordHasher,
+        private PasswordResetTokenRepository $resetTokens,
     ) {
     }
 
@@ -45,6 +47,15 @@ final readonly class UserPasswordHasherProcessor implements ProcessorInterface
         if (null !== $plainPassword && '' !== $plainPassword) {
             $data->setPassword($this->passwordHasher->hashPassword($data, $plainPassword));
             $data->eraseCredentials();
+
+            // Un mot de passe qui change périme les demandes de réinitialisation en
+            // cours. Sans cela, un lien demandé AVANT le changement resterait valide
+            // APRÈS, et permettrait de reprendre la main sur un compte dont le
+            // propriétaire vient justement d'en sécuriser l'accès. C'est le scénario
+            // exact du vol de jeton suivi d'une reprise de contrôle.
+            if (null !== $data->getId()) {
+                $this->resetTokens->invalidateAllFor($data, new \DateTimeImmutable());
+            }
         }
 
         return $this->persistProcessor->process($data, $operation, $uriVariables, $context);

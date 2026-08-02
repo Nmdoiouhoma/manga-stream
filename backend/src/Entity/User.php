@@ -19,6 +19,7 @@ use ApiPlatform\OpenApi\Model;
 use App\Repository\UserRepository;
 use App\State\MeProvider;
 use App\State\UserPasswordHasherProcessor;
+use App\Validator\CurrentPasswordRequired;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
@@ -42,6 +43,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\UniqueConstraint(name: 'uniq_user_username', columns: ['username'])]
 #[UniqueEntity(fields: ['email'], message: 'Un compte existe déjà avec cette adresse e-mail.')]
 #[UniqueEntity(fields: ['username'], message: 'Ce nom d\'utilisateur est déjà pris.')]
+#[CurrentPasswordRequired]
 #[ApiResource(
     shortName: 'User',
     description: 'Compte utilisateur.',
@@ -154,6 +156,16 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[Groups(['user:write'])]
     private ?string $plainPassword = null;
 
+    /**
+     * Mot de passe courant, exigé pour en changer. Ni persisté ni sérialisé en
+     * lecture. Voir {@see \App\Validator\CurrentPasswordRequired} : sans cette
+     * preuve, un JWT volé permettait de changer le mot de passe et de verrouiller le
+     * propriétaire hors de son compte.
+     */
+    #[ApiProperty(description: 'Mot de passe actuel, obligatoire pour modifier `plainPassword` sur son propre compte (écriture seule).')]
+    #[Groups(['user:write'])]
+    private ?string $currentPassword = null;
+
     #[ORM\Column(type: 'datetime_immutable')]
     #[Groups(['user:read'])]
     private \DateTimeImmutable $createdAt;
@@ -245,6 +257,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         return $this;
     }
 
+    public function getCurrentPassword(): ?string
+    {
+        return $this->currentPassword;
+    }
+
+    public function setCurrentPassword(?string $currentPassword): static
+    {
+        $this->currentPassword = $currentPassword;
+
+        return $this;
+    }
+
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
@@ -263,6 +287,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function eraseCredentials(): void
     {
         $this->plainPassword = null;
+        $this->currentPassword = null;
     }
 
     public function __toString(): string
