@@ -379,6 +379,56 @@ paths:
           style: form
           explode: false
         -
+          name: 'popularity[between]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[gt]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[gte]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[lt]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[lte]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
           name: 'exists[bannerImage]'
           in: query
           description: ''
@@ -414,6 +464,20 @@ paths:
           explode: false
         -
           name: 'order[averageScore]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+            default: asc
+            enum:
+              - asc
+              - desc
+          style: form
+          explode: false
+        -
+          name: 'order[popularity]'
           in: query
           description: ''
           required: false
@@ -3569,6 +3633,56 @@ paths:
           style: form
           explode: false
         -
+          name: 'popularity[between]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[gt]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[gte]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[lt]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
+          name: 'popularity[lte]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+          style: form
+          explode: false
+        -
           name: 'exists[bannerImage]'
           in: query
           description: ''
@@ -3604,6 +3718,20 @@ paths:
           explode: false
         -
           name: 'order[averageScore]'
+          in: query
+          description: ''
+          required: false
+          deprecated: false
+          schema:
+            type: string
+            default: asc
+            enum:
+              - asc
+              - desc
+          style: form
+          explode: false
+        -
+          name: 'order[popularity]'
           in: query
           description: ''
           required: false
