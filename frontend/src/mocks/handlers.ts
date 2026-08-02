@@ -44,6 +44,7 @@ import {
   type MockProgress,
 } from './db'
 import type { Anime, Genre, Manga } from '../types/media'
+import type { components } from '../api/schema'
 
 /** The contract documents a default page size of 30 and a maximum of 100. */
 const DEFAULT_ITEMS_PER_PAGE = 30
@@ -262,6 +263,139 @@ function ownerIriOf(resource: { user?: { '@id': string } }): string | null {
 function matchesIri(relation: { '@id': string } | null | undefined, iri: string | null): boolean {
   if (!iri) return true
   return relation?.['@id'] === iri
+}
+
+/* ── Recommendations ───────────────────────────────────────────────────────
+ * Réimplémentation *approximative* du moteur v2 du backend
+ * (`strategy: genre_cosine_idf`), pas une copie : le but est que l'écran
+ * `/recommendations` soit exercé avec des scores **distincts** et un `reason`
+ * de la même forme que celui servi en vrai — sinon le mock validerait une UI
+ * qui s'écroulerait devant le vrai backend.
+ *
+ * Reproduit fidèlement, parce que l'UI en dépend :
+ *   - collection **vide** quand l'utilisateur n'a aucun favori (choix assumé
+ *     du backend : pas de suggestion arbitraire) ;
+ *   - `reason` = { strategy, genres[], affinity, quality, popularity } — donc
+ *     un tableau et des nombres, ce que le contrat type (à tort) en
+ *     `Record<string, string | null>` ;
+ *   - les favoris eux-mêmes sont exclus des suggestions ;
+ *   - `genres` classés par contribution décroissante ;
+ *   - tri par score décroissant.
+ */
+type MockRecommendation = components['schemas']['Recommendation.jsonld-recommendation.read']
+
+/** Poids IDF : un genre rare est plus informatif qu'un genre omniprésent. */
+function inverseDocumentFrequency(corpus: MediaResource[]): Map<string, number> {
+  const total = corpus.length || 1
+  const counts = new Map<string, number>()
+  for (const item of corpus) {
+    for (const genre of item.genres ?? []) {
+      counts.set(genre.slug, (counts.get(genre.slug) ?? 0) + 1)
+    }
+  }
+  const weights = new Map<string, number>()
+  for (const [slug, count] of counts) {
+    weights.set(slug, Math.log(total / count) + 1)
+  }
+  return weights
+}
+
+function buildRecommendations(userIri: string): MockRecommendation[] {
+  const owned = new Set(
+    favorites
+      .filter((favorite) => ownerIriOf(favorite) === userIri)
+      .map((favorite) => (favorite.anime ?? favorite.manga)?.['@id'])
+      .filter((iri): iri is string => Boolean(iri)),
+  )
+
+  // Aucun favori ⇒ aucune suggestion. C'est l'état vide que la page doit
+  // savoir expliquer, il doit donc être atteignable avec les mocks.
+  if (owned.size === 0) return []
+
+  const corpus: MediaResource[] = [...animes, ...mangas]
+  const idf = inverseDocumentFrequency(corpus)
+
+  // Profil de goût : somme des poids IDF des genres des favoris.
+  const profile = new Map<string, number>()
+  for (const item of corpus) {
+    if (!owned.has(item['@id'])) continue
+    for (const genre of item.genres ?? []) {
+      profile.set(genre.slug, (profile.get(genre.slug) ?? 0) + (idf.get(genre.slug) ?? 1))
+    }
+  }
+  const profileNorm = Math.sqrt([...profile.values()].reduce((sum, w) => sum + w * w, 0)) || 1
+
+  const scored = corpus
+    .filter((item) => !owned.has(item['@id']))
+    .map((item) => {
+      const slugs = (item.genres ?? []).map((genre) => genre.slug)
+      // Contribution de chaque genre au produit scalaire — c'est elle qui
+      // décide du classement affiché dans « parce que vous aimez … ».
+      const contributions = slugs
+        .map((slug) => ({ slug, weight: (profile.get(slug) ?? 0) * (idf.get(slug) ?? 1) }))
+        .filter((entry) => entry.weight > 0)
+        .sort((a, b) => b.weight - a.weight)
+
+      const dot = contributions.reduce((sum, entry) => sum + entry.weight, 0)
+      const itemNorm =
+        Math.sqrt(slugs.reduce((sum, slug) => sum + (idf.get(slug) ?? 1) ** 2, 0)) || 1
+      const affinity = Math.min(1, dot / (profileNorm * itemNorm))
+      const quality = (item.averageScore ?? 60) / 100
+      // Pas de `popularity` dans le jeu de mocks : le score moyen en tient
+      // lieu, avec un décalage pour que les trois métriques ne soient pas
+      // identiques et que l'affichage soit réellement testé.
+      const popularity = Math.min(1, quality * 0.92 + 0.05)
+
+      return {
+        item,
+        affinity,
+        quality,
+        popularity,
+        genres: contributions.slice(0, 4).map((entry) => entry.slug),
+        score: Math.min(1, affinity * 0.6 + quality * 0.25 + popularity * 0.15),
+      }
+    })
+    .filter((entry) => entry.affinity > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20)
+
+  const user = findUserByIri(userIri)
+
+  return scored.map((entry, index) => {
+    const isAnime = entry.item['@id'].includes('/animes/')
+    const ref = {
+      '@id': entry.item['@id'],
+      '@type': isAnime ? 'Anime' : 'Manga',
+      id: entry.item.id,
+      titleRomaji: entry.item.titleRomaji,
+      titleEnglish: entry.item.titleEnglish ?? null,
+      coverImage: entry.item.coverImage ?? null,
+    }
+
+    return {
+      '@id': `/api/recommendations/${index + 1}`,
+      '@type': 'Recommendation',
+      id: index + 1,
+      ...(user ? { user: userRef(user) } : {}),
+      ...(isAnime ? { anime: ref } : { manga: ref }),
+      score: round4(entry.score),
+      // Volontairement pas conforme au type généré, parce que le VRAI backend
+      // ne l'est pas non plus : `genres` est un tableau et les métriques sont
+      // des nombres. Le cast passe par `unknown`, pas par `any`.
+      reason: {
+        strategy: 'genre_cosine_idf',
+        genres: entry.genres,
+        affinity: round4(entry.affinity),
+        quality: round4(entry.quality),
+        popularity: round4(entry.popularity),
+      } as unknown as MockRecommendation['reason'],
+      generatedAt: new Date().toISOString(),
+    } as MockRecommendation
+  })
+}
+
+function round4(value: number): number {
+  return Math.round(value * 10_000) / 10_000
 }
 
 export const handlers = [
@@ -663,6 +797,25 @@ export const handlers = [
       { '@context': '/api/contexts/Notification', ...entry },
       { headers: LD_JSON },
     )
+  }),
+
+  /* ── Recommendations ──────────────────────────────────────────────────── */
+
+  http.get('*/api/recommendations', async ({ request }) => {
+    // Un peu plus lent que les autres collections : le vrai endpoint recalcule
+    // les suggestions quand elles sont périmées, l'écran doit donc supporter
+    // un temps de réponse visible (et son squelette être vu au moins une fois).
+    await delay(320)
+    const user = authenticate(request)
+    if (!user) return unauthorized()
+
+    const search = new URL(request.url).searchParams
+    let all = buildRecommendations(user['@id'])
+
+    // Le contrat expose `order[score]` ; le front l'envoie explicitement.
+    if (search.get('order[score]') === 'asc') all = [...all].reverse()
+
+    return hydraCollection(request, '/api/recommendations', 'Recommendation', all)
   }),
 
   /* ── Users (legacy collection; the contract still exposes it) ──────────── */

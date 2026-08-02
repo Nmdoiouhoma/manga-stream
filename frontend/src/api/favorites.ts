@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient, unwrap } from './client'
 import { normalizeCollection } from './hydra'
 import { useAuth } from '../auth/useAuth'
+import { recommendationsQueryKey } from './recommendations'
 import { idFromIri, type MediaKind } from '../types/media'
 import type { components } from './schema'
 
@@ -192,6 +193,10 @@ export function useToggleFavorite() {
 
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: key })
+      // Les favoris sont l'unique entrée du moteur de recommandation : en
+      // toucher un rend le classement en cache faux. Le provider backend les
+      // recalcule à la lecture suivante, il suffit donc d'invalider.
+      void queryClient.invalidateQueries({ queryKey: recommendationsQueryKey(userIri) })
     },
   })
 }

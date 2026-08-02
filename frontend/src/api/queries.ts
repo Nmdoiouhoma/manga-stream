@@ -16,6 +16,7 @@
  * faking a single paginated stream, the catalogue keeps one cursor per
  * collection and advances the ones that still advertise a Hydra `next` link.
  */
+import { useMemo } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { apiClient, unwrap } from './client'
 import { normalizeCollection } from './hydra'
@@ -158,6 +159,27 @@ export function useGenres() {
     },
     staleTime: Infinity,
   })
+}
+
+/**
+ * Traduit un **slug** de genre en libellé affichable.
+ *
+ * Le besoin vient des recommandations : le `reason` renvoyé par le backend
+ * liste des slugs (`"psychological"`), pas des noms (`"Psychological"`). La
+ * liste des genres est déjà en cache (`staleTime: Infinity`) pour la barre de
+ * filtres, donc cette résolution ne coûte aucune requête supplémentaire.
+ *
+ * Repli sur le slug capitalisé quand il est inconnu : un genre absent de la
+ * table ne doit pas faire disparaître l'explication, qui est justement ce qui
+ * rend la suggestion crédible.
+ */
+export function useGenreLabel(): (slug: string) => string {
+  const { data: genres } = useGenres()
+
+  return useMemo(() => {
+    const bySlug = new Map((genres ?? []).map((genre) => [genre.slug, genre.name]))
+    return (slug: string) => bySlug.get(slug) ?? slug.charAt(0).toUpperCase() + slug.slice(1)
+  }, [genres])
 }
 
 /* ────────────────────────────── Detail pages ────────────────────────────── */

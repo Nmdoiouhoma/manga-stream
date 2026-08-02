@@ -58,6 +58,8 @@ export function ProfilePage() {
         </button>
       </section>
 
+      <RecommendationTeaser favoriteCount={favorites.length} />
+
       <section className="stats">
         <Stat label="Favoris" value={favoritesLoading ? '…' : String(favorites.length)} />
         <Stat label="Titres suivis" value={progressLoading ? '…' : String(progress.length)} />
@@ -131,6 +133,31 @@ export function ProfilePage() {
         )}
       </section>
     </div>
+  )
+}
+
+/**
+ * Passerelle vers `/recommendations` depuis le profil.
+ *
+ * Elle n'appelle **pas** `useRecommendations()` : le profil ne doit pas
+ * déclencher un recalcul côté serveur juste pour afficher un encart. Le nombre
+ * de favoris, déjà chargé par la page, suffit à écrire le bon message.
+ */
+function RecommendationTeaser({ favoriteCount }: { favoriteCount: number }) {
+  return (
+    <section className="panel panel--soft profile__reco">
+      <div>
+        <h2 className="section__title">Recommandations</h2>
+        <p className="muted">
+          {favoriteCount === 0
+            ? 'Ajoutez quelques favoris et le moteur vous proposera des titres proches, genre par genre.'
+            : `Calculées à partir de vos ${favoriteCount} favori${favoriteCount > 1 ? 's' : ''}, avec le détail de ce qui a pesé dans chaque suggestion.`}
+        </p>
+      </div>
+      <Link to="/recommendations" className="btn btn--primary">
+        Voir mes recommandations
+      </Link>
+    </section>
   )
 }
 

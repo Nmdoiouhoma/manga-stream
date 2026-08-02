@@ -3,6 +3,7 @@ import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { CatalogPage } from './pages/CatalogPage'
 import { MediaDetailPage } from './pages/MediaDetailPage'
 import { FavoritesPage } from './pages/FavoritesPage'
+import { RecommendationsPage } from './pages/RecommendationsPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -12,14 +13,21 @@ import { RequireAuth } from './auth/RequireAuth'
 import { useAuth } from './auth/useAuth'
 import { USE_MOCKS } from './config'
 
+/**
+ * `authOnly` : l'entrée n'apparaît que connecté. Les recommandations n'ont
+ * aucun sens anonyme — l'endpoint répond 401 et l'écran ne pourrait afficher
+ * qu'une invitation à se connecter, ce que la barre de compte fait déjà.
+ */
 const NAV_ITEMS = [
-  { to: '/', label: 'Catalogue', end: true },
-  { to: '/favorites', label: 'Favoris', end: false },
-  { to: '/profile', label: 'Profil', end: false },
+  { to: '/', label: 'Catalogue', end: true, authOnly: false },
+  { to: '/recommendations', label: 'Pour vous', end: false, authOnly: true },
+  { to: '/favorites', label: 'Favoris', end: false, authOnly: false },
+  { to: '/profile', label: 'Profil', end: false, authOnly: false },
 ]
 
 function AppShell({ children }: { children: ReactNode }) {
   const { isAuthenticated, user, logout } = useAuth()
+  const navItems = NAV_ITEMS.filter((item) => !item.authOnly || isAuthenticated)
 
   return (
     <div className="app">
@@ -31,7 +39,7 @@ function AppShell({ children }: { children: ReactNode }) {
           </NavLink>
 
           <nav className="nav" aria-label="Navigation principale">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -79,7 +87,7 @@ function AppShell({ children }: { children: ReactNode }) {
       <main className="main">{children}</main>
 
       <footer className="footer">
-        manga-stream · phase 2 · {USE_MOCKS ? 'données simulées via MSW' : 'API réelle'}
+        manga-stream · phase 3 · {USE_MOCKS ? 'données simulées via MSW' : 'API réelle'}
       </footer>
     </div>
   )
@@ -101,6 +109,14 @@ export default function App() {
           element={
             <RequireAuth>
               <FavoritesPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/recommendations"
+          element={
+            <RequireAuth>
+              <RecommendationsPage />
             </RequireAuth>
           }
         />

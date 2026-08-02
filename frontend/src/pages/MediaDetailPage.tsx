@@ -4,13 +4,12 @@ import { ApiError } from '../api/client'
 import { CommentThread } from '../components/CommentThread'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { ProgressPanel } from '../components/ProgressPanel'
+import { UnitList } from '../components/UnitList'
+import { WatchlistButton } from '../components/WatchlistButton'
 import {
-  formatChapterNumber,
   formatDate,
   formatScore,
   STATUS_LABELS,
-  type Chapter,
-  type Episode,
   type MediaDetail,
   type MediaKind,
 } from '../types/media'
@@ -157,6 +156,7 @@ function DetailView({ media }: { media: MediaDetail }) {
               title={media.title}
               coverImage={media.coverImage}
             />
+            <WatchlistButton targetIri={media.iri} kind={media.kind} variant="full" />
           </div>
 
           {media.genres.length > 0 && (
@@ -186,11 +186,10 @@ function DetailView({ media }: { media: MediaDetail }) {
             )}
           </section>
 
-          {isAnime ? (
-            <EpisodeList episodes={media.episodes} announced={media.unitCount} />
-          ) : (
-            <ChapterList chapters={media.chapters} announced={media.unitCount} />
-          )}
+          {/* Épisodes ou chapitres selon le type — un seul composant, parce que
+              les deux listes ne diffèrent que par trois champs et que les faire
+              diverger n'apporterait rien. */}
+          <UnitList media={media} />
 
           <CommentThread kind={media.kind} targetIri={media.iri} />
         </div>
@@ -200,94 +199,6 @@ function DetailView({ media }: { media: MediaDetail }) {
         </aside>
       </div>
     </article>
-  )
-}
-
-function EpisodeList({ episodes, announced }: { episodes: Episode[]; announced: number | null }) {
-  return (
-    <section className="panel">
-      <h2 className="section__title">
-        Épisodes {episodes.length > 0 && <span className="section__count">{episodes.length}</span>}
-      </h2>
-
-      {episodes.length === 0 ? (
-        <p className="muted">
-          {announced
-            ? `${announced} épisodes annoncés, mais aucun n’est encore référencé dans la base.`
-            : 'Aucun épisode référencé.'}
-        </p>
-      ) : (
-        <ul className="unit-list">
-          {episodes.map((episode) => (
-            <li key={episode['@id']} className="unit">
-              <span className="unit__number">{episode.number}</span>
-              <span className="unit__title">{episode.title || `Épisode ${episode.number}`}</span>
-              <span className="unit__meta">
-                {episode.duration ? `${episode.duration} min` : null}
-                {episode.duration && episode.airDate ? ' · ' : null}
-                {formatDate(episode.airDate)}
-              </span>
-              {episode.streamUrl && (
-                <a
-                  className="btn btn--link"
-                  href={episode.streamUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  Voir
-                </a>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-function ChapterList({ chapters, announced }: { chapters: Chapter[]; announced: number | null }) {
-  return (
-    <section className="panel">
-      <h2 className="section__title">
-        Chapitres {chapters.length > 0 && <span className="section__count">{chapters.length}</span>}
-      </h2>
-
-      {chapters.length === 0 ? (
-        <p className="muted">
-          {announced
-            ? `${announced} chapitres annoncés, mais aucun n’est encore référencé dans la base.`
-            : 'Aucun chapitre référencé.'}
-        </p>
-      ) : (
-        <ul className="unit-list">
-          {chapters.map((chapter) => (
-            <li key={chapter['@id']} className="unit">
-              {/* `number` is a decimal serialised as a string: "12.50" must
-                  render as "12.5", never as "13". */}
-              <span className="unit__number">{formatChapterNumber(chapter.number)}</span>
-              <span className="unit__title">
-                {chapter.title || `Chapitre ${formatChapterNumber(chapter.number)}`}
-              </span>
-              <span className="unit__meta">
-                {chapter.pageCount ? `${chapter.pageCount} p.` : null}
-                {chapter.pageCount && chapter.releaseDate ? ' · ' : null}
-                {formatDate(chapter.releaseDate)}
-              </span>
-              {chapter.readUrl && (
-                <a
-                  className="btn btn--link"
-                  href={chapter.readUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  Lire
-                </a>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   )
 }
 
