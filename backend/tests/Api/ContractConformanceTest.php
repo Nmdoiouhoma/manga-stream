@@ -131,6 +131,43 @@ final class ContractConformanceTest extends ApiTestCase
     }
 
     /**
+     * Le frontend a dû écrire ses appels de réinitialisation à la main, en `fetch`,
+     * faute de les trouver dans le contrat (cf. `frontend/src/api/password.ts`). Ce
+     * test garde la porte ouverte : dès que ces chemins disparaîtraient du contrat,
+     * le client généré cesserait de les connaître, en silence.
+     */
+    public function testThePasswordResetEndpointsAreDocumented(): void
+    {
+        $openApi = $this->client()->request('GET', '/api/docs.jsonopenapi', [
+            'headers' => ['Accept' => 'application/vnd.openapi+json'],
+        ])->toArray();
+
+        foreach (['/api/password/forgot', '/api/password/reset'] as $path) {
+            self::assertArrayHasKey($path, $openApi['paths'], $path.' doit figurer dans le contrat.');
+            self::assertArrayHasKey('204', $openApi['paths'][$path]['post']['responses']);
+        }
+    }
+
+    /**
+     * Une limitation de débit non documentée est une panne pour le client : il
+     * découvre le blocage en production, sans le délai d'attente que le serveur lui
+     * donne pourtant dans `Retry-After`.
+     */
+    public function testTheThrottledEndpointsDocumentTheirRateLimit(): void
+    {
+        $openApi = $this->client()->request('GET', '/api/docs.jsonopenapi', [
+            'headers' => ['Accept' => 'application/vnd.openapi+json'],
+        ])->toArray();
+
+        foreach (['/api/login', '/api/register', '/api/users', '/api/password/forgot', '/api/password/reset'] as $path) {
+            $response = $openApi['paths'][$path]['post']['responses']['429'] ?? null;
+
+            self::assertNotNull($response, $path.' doit documenter son 429.');
+            self::assertArrayHasKey('Retry-After', $response['headers'] ?? [], $path.' doit documenter Retry-After.');
+        }
+    }
+
+    /**
      * Le contrat doit exposer l'endpoint d'abonnement Mercure, sans quoi le frontend
      * n'a aucun type généré pour l'appeler.
      */
