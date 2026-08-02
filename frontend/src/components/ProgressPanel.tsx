@@ -104,12 +104,19 @@ export function ProgressPanel({ media }: { media: MediaDetail }) {
   const suggestCompletion = reachedTotal && status !== 'COMPLETED' && !suggestionDismissed
 
   const handleStatusChange = (next: ProgressStatus) => {
+    // Quitter « Terminé » laisse la progression au total, donc rallumerait
+    // aussitôt la suggestion « marquer comme terminé ? » — soit exactement ce
+    // que l'utilisateur vient de refuser. On la tait jusqu'à sa prochaine
+    // saisie dans le champ.
+    if (status === 'COMPLETED' && next !== 'COMPLETED') setSuggestionDismissed(true)
+
     setStatus(next)
     // Pré-remplissage, pas simple grisage : sans lui, le champ afficherait
     // encore l'ancienne valeur tout en étant verrouillé, et l'utilisateur
     // n'aurait aucun moyen de comprendre ce qui sera enregistré.
     if (next === 'COMPLETED' && totalKnown) {
       setUnit(isAnime ? String(total) : formatChapterNumber(total))
+      setSuggestionDismissed(false)
     }
   }
 
