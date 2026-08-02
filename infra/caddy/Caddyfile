@@ -1,0 +1,158 @@
+# ===========================================================================
+# manga-stream :: reverse proxy public (production)
+#
+# Caddy est le SEUL conteneur à publier des ports sur l'IP publique du VPS
+# (80 et 443). Tout le reste — nginx, frontend, mercure, database, mailpit —
+# n'écoute que sur le réseau Docker interne, ou sur 127.0.0.1 quand un port
+# est publié pour le confort d'administration (BIND_IP=127.0.0.1).
+#
+# Pourquoi Caddy plutôt que Traefik : ici la topologie est figée et tient en
+# quinze lignes. Traefik brille quand les routes se découvrent dynamiquement
+# via des labels ; sur une stack de sept services décrite en compose, il
+# n'apporte qu'un langage de configuration de plus. Caddy obtient et renouvelle
+# les certificats Let's Encrypt sans aucune ligne de configuration.
+#
+# UNE SEULE ORIGINE pour tout le produit, et c'est structurant :
+#
+#   https://exemple.tld/            -> frontend  (SPA statique)
+#   https://exemple.tld/api/...     -> nginx     -> php-fpm -> Symfony
+#   https://exemple.tld/.well-known/mercure -> hub Mercure (SSE)
+#
+# Conséquences directes :
+#   * plus de CORS du tout pour le navigateur (même origine) ;
+#   * le `connect-src 'self'` de infra/nginx/security-headers.conf reste
+#     valable — un hub sur un autre domaine le ferait échouer en silence :
+#     la page marcherait, mais aucune notification n'arriverait ;
+#   * les cookies (mercureAuthorization) n'ont pas besoin de SameSite=None,
+#     donc pas besoin d'être partagés entre sites.
+#
+# Variables attendues dans l'environnement du conteneur (voir
+# docker-compose.prod.yml et .env.prod.example) :
+#   PUBLIC_DOMAIN   exemple.tld
+#   ACME_EMAIL      adresse de contact Let's Encrypt (expiration, incidents)
+# ===========================================================================
+{
+	# Adresse de contact pour Let's Encrypt. Obligatoire en production :
+	# c'est là qu'arrivent les alertes d'expiration si le renouvellement casse.
+	email {$ACME_EMAIL}
+
+	# --- Mise au point du certificat ---------------------------------------
+	# Let's Encrypt limite à 5 échecs par compte/domaine et par heure, et à
+	# 50 certificats par domaine et par semaine. En cas de doute sur le DNS ou
+	# l'ouverture du port 80, DÉCOMMENTER pour taper le bac à sable, dont les
+	# certificats ne sont pas reconnus par les navigateurs mais dont les quotas
+	# sont larges. À recommenter avant la mise en service.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+
+	# -----------------------------------------------------------------------
+	# HSTS
+	#
+	# Posé ICI et pas dans infra/nginx/security-headers.conf, où il est
+	# volontairement commenté : la stack de dev n'a pas de TLS, et un HSTS
+	# émis en clair est mémorisé des mois par le navigateur, qui refuse
+	# ensuite tout accès HTTP au domaine — y compris `localhost`.
+	#
+	# Caddy, lui, ne sert QUE du HTTPS : l'en-tête y est toujours légitime.
+	#
+	# Pas de `preload` tant que le domaine n'est pas définitif : l'inscription
+	# à la liste de préchargement des navigateurs est très lente à défaire.
+	# -----------------------------------------------------------------------
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Caddy annonce sa version par défaut.
+		-Server
+	}
+
+	# -----------------------------------------------------------------------
+	# API Symfony
+	# -----------------------------------------------------------------------
+	handle /api/* {
+		reverse_proxy nginx:80 {
+			# X-Forwarded-For ÉCRASÉ, pas complété.
+			#
+			# Par défaut Caddy AJOUTE l'IP observée à la valeur reçue du
+			# client. Un visiteur qui envoie « X-Forwarded-For: 1.2.3.4 »
+			# produirait donc "1.2.3.4, <son IP>". Symfony s'en sortirait
+			# (il remonte la chaîne de droite à gauche), mais toute brique qui
+			# lirait naïvement le premier élément se ferait tromper.
+			# {remote_host} = l'IP réellement observée par Caddy, point final.
+			#
+			# `caddy validate` signale ici « Unnecessary header_up
+			# X-Forwarded-For » : c'est un faux positif dans notre cas. Caddy
+			# pose bien cet en-tête tout seul, mais en AJOUTANT à la valeur
+			# reçue ; ce qu'on veut ici, c'est l'ÉCRASER.
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+			# X-Forwarded-Proto, -Host et -Port ne sont pas repris ici :
+			# Caddy les pose déjà, correctement, et il n'y a aucune raison
+			# de les écraser. C'est ce report qui évite que Symfony croie le
+			# visiteur en http — la connexion Caddy -> nginx étant en clair —
+			# et donc qu'il génère des URLs absolues fausses dans les mails
+			# de réinitialisation et ne pose jamais les cookies `secure`.
+		}
+	}
+
+	# -----------------------------------------------------------------------
+	# Hub Mercure (Server-Sent Events)
+	#
+	# Directement vers le hub, sans passer par nginx : un saut de moins sur des
+	# connexions qui restent ouvertes des heures.
+	# -----------------------------------------------------------------------
+	handle /.well-known/mercure* {
+		reverse_proxy mercure:80 {
+			header_up X-Forwarded-For {remote_host}
+
+			# LA ligne qui fait vivre ou mourir le temps réel.
+			#
+			# -1 désactive tout tampon : chaque évènement part immédiatement.
+			# Sans elle, Caddy accumule la réponse et le navigateur ne reçoit
+			# rien pendant des secondes, voire jamais. Le symptôme est
+			# déroutant : la connexion EventSource est bien « ouverte », aucune
+			# erreur nulle part, et les notifications arrivent en rafale ou
+			# jamais.
+			flush_interval -1
+
+			# Une connexion SSE inactive ne doit pas être coupée. 0 = jamais.
+			transport http {
+				response_header_timeout 0
+				read_timeout 0
+			}
+		}
+	}
+
+	# -----------------------------------------------------------------------
+	# SPA — tout le reste
+	#
+	# Sert le bundle construit par le stage `prod` de
+	# infra/frontend/Dockerfile, avec son propre nginx (fallback SPA, cache
+	# immuable sur /assets/, en-têtes de sécurité).
+	# -----------------------------------------------------------------------
+	handle {
+		reverse_proxy frontend:80 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Redirection du www vers le domaine nu.
+#
+# À supprimer si le DNS ne déclare pas d'enregistrement www : Caddy tenterait
+# d'obtenir un certificat pour un nom qui ne pointe nulle part, échouerait, et
+# consommerait le quota d'échecs Let's Encrypt.
+# ---------------------------------------------------------------------------
+www.{$PUBLIC_DOMAIN} {
+	redir https://{$PUBLIC_DOMAIN}{uri} permanent
+}

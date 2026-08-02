@@ -1,0 +1,315 @@
+# ===========================================================================
+# manga-stream :: surcouche de PRODUCTION
+#
+# Ce fichier ne se lit JAMAIS seul. Il se superpose au docker-compose.yml de
+# développement, qui reste la source de vérité pour tout ce qui ne change pas :
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Pour ne pas répéter les deux `-f` à chaque commande, poser une fois pour
+# toutes dans le shell du serveur :
+#
+#   export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+#
+# ---------------------------------------------------------------------------
+# CE QUE CETTE SURCOUCHE CHANGE
+#
+#   1. Caddy devient le seul service exposé sur l'IP publique (80/443),
+#      obtient les certificats Let's Encrypt et termine le TLS.
+#   2. Tous les autres ports publiés basculent sur 127.0.0.1 (BIND_IP), donc
+#      injoignables depuis Internet mais toujours accessibles en SSH pour
+#      l'administration.
+#   3. Le frontend passe du serveur de dev Vite au bundle statique construit
+#      par le stage `prod`, avec les URLs publiques FIGÉES DANS LE BUNDLE
+#      (voir l'avertissement du service `frontend` plus bas).
+#   4. Le backend, le worker et le cron passent au stage `prod` : code copié
+#      dans l'image, autoloader optimisé, APP_ENV=prod, APP_DEBUG=0.
+#   5. Mailpit disparaît (profil `dev-uniquement`) : en production les mails
+#      partent par un vrai relais SMTP.
+#   6. Un service `backup` dumpe PostgreSQL quotidiennement, en vérifiant
+#      chaque dump.
+#   7. Journalisation bornée : sans `logging`, les logs JSON de Docker
+#      grossissent sans limite jusqu'à remplir le disque du VPS. C'est une
+#      panne classique, silencieuse, et qui arrive vers le sixième mois.
+#
+# CE QU'ELLE NE CHANGE PAS, volontairement :
+#   * les noms de services, de conteneurs et de VOLUMES. Renommer quoi que ce
+#     soit ici créerait de nouveaux volumes vides : la base serait « perdue »
+#     alors que les données seraient toujours là, sous un autre nom.
+# ===========================================================================
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Caddy — terminaison TLS et point d'entrée public unique
+  # -------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: manga-stream-caddy
+    restart: unless-stopped
+    ports:
+      # Explicitement sur toutes les interfaces : c'est le SEUL service qui
+      # doit l'être. Le port 80 n'est pas décoratif — Let's Encrypt s'en sert
+      # pour le challenge HTTP-01 et Caddy y redirige vers HTTPS.
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+      # QUIC / HTTP3.
+      - "0.0.0.0:443:443/udp"
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?PUBLIC_DOMAIN est obligatoire en production}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL est obligatoire, Let-s Encrypt y envoie les alertes d-expiration}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # `caddy_data` contient LES CERTIFICATS ET LA CLÉ DE COMPTE ACME.
+      # Le perdre relance une émission complète à chaque redémarrage, et
+      # Let's Encrypt plafonne à 5 échecs par heure et 50 certificats par
+      # semaine et par domaine : quelques redéploiements suffisent à se
+      # retrouver sans certificat pendant des heures.
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      - nginx
+      - frontend
+      - mercure
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: &prod-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL — port refermé, journal borné
+  # -------------------------------------------------------------------------
+  database:
+    # Le volume database_data est INCHANGÉ et ne doit jamais l'être : c'est
+    # toute la base. `docker compose down` le conserve, `down -v` le détruit.
+    # Ne jamais taper `-v` sur ce serveur.
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?mot de passe PostgreSQL obligatoire en production}
+    logging: *prod-logging
+
+  # -------------------------------------------------------------------------
+  # Backend Symfony — stage prod
+  # -------------------------------------------------------------------------
+  backend:
+    build:
+      target: prod
+    image: manga-stream-backend:prod
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: 0
+      # Générés SUR LE SERVEUR, jamais repris du dépôt (qui est public).
+      APP_SECRET: ${APP_SECRET:?APP_SECRET doit etre genere sur le serveur - openssl rand -hex 32}
+      MERCURE_JWT_SECRET: ${MERCURE_JWT_SECRET:?MERCURE_JWT_SECRET doit etre genere sur le serveur}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:?JWT_PASSPHRASE doit etre genere sur le serveur}
+      # URL publique annoncée aux navigateurs. DIFFÉRENTE de MERCURE_URL, qui
+      # reste http://mercure/.well-known/mercure (interne, conteneur à
+      # conteneur). Confondre les deux donne un symptôme trompeur : la
+      # publication côté serveur fonctionne, mais le navigateur tente de se
+      # connecter à un hôte Docker qu'il ne peut pas résoudre.
+      MERCURE_PUBLIC_URL: https://${PUBLIC_DOMAIN}/.well-known/mercure
+      DEFAULT_URI: https://${PUBLIC_DOMAIN}
+      # Restreint au domaine réel. La valeur de dev accepte tout localhost,
+      # ce qui n'a aucun sens ici.
+      # Expression reguliere, fournie telle quelle dans .env : les points d'un
+      # nom de domaine doivent y etre echappes, et le construire par
+      # concatenation ici donnerait une regex fausse en silence.
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?CORS_ALLOW_ORIGIN doit etre restreint au domaine reel}
+      # Vrai relais SMTP. Voir .env.prod.example.
+      MAILER_DSN: ${MAILER_DSN:?MAILER_DSN obligatoire en production}
+      # DEUX sauts internes ici (Caddy puis nginx), tous deux d'adresse
+      # dynamique côté Caddy : on déclare donc la plage du réseau compose
+      # entière. C'est sûr en production PARCE QUE aucun visiteur ne peut
+      # émettre depuis l'intérieur de ce réseau — ce qui n'est pas vrai en
+      # développement, où la passerelle Docker porte le trafic venu du poste.
+      SYMFONY_TRUSTED_PROXIES: ${SYMFONY_TRUSTED_PROXIES:-${DOCKER_SUBNET:-172.21.0.0/16}}
+      # Les migrations restent manuelles : un redéploiement ne doit jamais
+      # modifier un schéma sans qu'on l'ait décidé.
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
+    # `!reset` VIDE la liste heritee du fichier de dev au lieu de s'y ajouter
+    # (les listes se CUMULENT entre fichiers compose, c'est la regle par
+    # defaut). Sans lui, le bind-mount ./backend du dev recouvrirait le code
+    # embarque dans l'image prod : on deploierait l'arbre de fichiers du
+    # serveur, pas l'image construite et testee.
+    volumes: !reset []
+    logging: *prod-logging
+
+  worker:
+    build:
+      target: prod
+    image: manga-stream-backend:prod
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: 0
+      APP_SECRET: ${APP_SECRET:?APP_SECRET doit etre genere sur le serveur}
+      MERCURE_JWT_SECRET: ${MERCURE_JWT_SECRET:?MERCURE_JWT_SECRET doit etre genere sur le serveur}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:?JWT_PASSPHRASE doit etre genere sur le serveur}
+      MERCURE_PUBLIC_URL: https://${PUBLIC_DOMAIN}/.well-known/mercure
+      DEFAULT_URI: https://${PUBLIC_DOMAIN}
+      MAILER_DSN: ${MAILER_DSN:?MAILER_DSN obligatoire en production}
+      SYMFONY_TRUSTED_PROXIES: ${SYMFONY_TRUSTED_PROXIES:-${DOCKER_SUBNET:-172.21.0.0/16}}
+    volumes: !reset []
+    logging: *prod-logging
+
+  cron:
+    build:
+      target: prod
+    image: manga-stream-backend:prod
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: 0
+      APP_SECRET: ${APP_SECRET:?APP_SECRET doit etre genere sur le serveur}
+      MERCURE_JWT_SECRET: ${MERCURE_JWT_SECRET:?MERCURE_JWT_SECRET doit etre genere sur le serveur}
+      JWT_PASSPHRASE: ${JWT_PASSPHRASE:?JWT_PASSPHRASE doit etre genere sur le serveur}
+      DEFAULT_URI: https://${PUBLIC_DOMAIN}
+    # Le cron garde son etat de planification et ses raccourcis, mais perd le
+    # bind-mount du code.
+    # `!override` REMPLACE la liste heritee (alors que `!reset` la vide et que
+    # le comportement par defaut la CUMULE). Il faut remplacer et non vider :
+    # le planificateur perdrait sinon son volume d'etat, et une synchro AniList
+    # complete repartirait a chaque redemarrage.
+    volumes: !override
+      - ./infra/cron/docker-entrypoint.sh:/usr/local/bin/anilist-cron.sh:ro
+      - ./infra/cron/anilist-sync-status:/usr/local/bin/anilist-sync-status:ro
+      - ./infra/cron/anilist-sync-now:/usr/local/bin/anilist-sync-now:ro
+      - anilist_sync_state:/state
+    logging: *prod-logging
+
+  # -------------------------------------------------------------------------
+  # nginx — reste en place, mais n'est plus le frontal
+  # -------------------------------------------------------------------------
+  nginx:
+    logging: *prod-logging
+
+  # -------------------------------------------------------------------------
+  # Frontend — bundle statique
+  #
+  # ############ LE PIÈGE LE PLUS COÛTEUX DE TOUT CE DÉPLOIEMENT ############
+  #
+  # Vite REMPLACE TEXTUELLEMENT les `import.meta.env.VITE_*` par leur valeur
+  # au moment du BUILD. Ce ne sont pas des variables d'environnement au sens
+  # habituel : après `npm run build`, elles n'existent plus, elles ont été
+  # écrites en dur dans le JavaScript envoyé au navigateur.
+  #
+  # Conséquence : une image construite avec les valeurs de développement
+  # embarque « http://localhost:8000/api ». Déployée en production, elle
+  # DÉMARRE NORMALEMENT, nginx répond 200, la page s'affiche — et le
+  # navigateur du visiteur appelle sa PROPRE machine. Aucune erreur serveur,
+  # aucune ligne dans les logs du VPS, juste une application vide. On cherche
+  # habituellement le problème côté back pendant une heure.
+  #
+  # D'où les `args` ci-dessous : les URLs publiques entrent dans le build.
+  # Et d'où, aussi, l'obligation de RECONSTRUIRE l'image à chaque changement
+  # de domaine :
+  #
+  #   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  #       build --no-cache frontend
+  #
+  # Vérification après déploiement (le domaine doit apparaître, jamais
+  # « localhost ») :
+  #
+  #   docker compose exec frontend sh -c \
+  #     'grep -ro "http://localhost:[0-9]*" /usr/share/nginx/html/assets | head'
+  #
+  # VITE_API_URL vaut « /api », en relatif : même origine que la page, donc
+  # aucun CORS, et l'image reste valable si le domaine change. C'est
+  # VITE_MERCURE_URL qui doit être absolue — EventSource n'accepte pas
+  # d'URL relative dans tous les navigateurs.
+  # -------------------------------------------------------------------------
+  frontend:
+    build:
+      target: prod
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_MERCURE_URL: ${VITE_MERCURE_URL:-https://${PUBLIC_DOMAIN}/.well-known/mercure}
+        VITE_USE_MOCKS: "false"
+    image: manga-stream-frontend:prod
+    environment:
+      NODE_ENV: production
+    # Sans ce `!reset`, le bind-mount ./frontend et le volume node_modules du
+    # fichier de dev viendraient s'ajouter ici : le conteneur prod ne sert que
+    # /usr/share/nginx/html, ils seraient au mieux inutiles, au pire trompeurs.
+    volumes: !reset []
+    logging: *prod-logging
+
+  # -------------------------------------------------------------------------
+  # Mercure — origines restreintes au domaine réel
+  # -------------------------------------------------------------------------
+  mercure:
+    environment:
+      # Toujours ":80" : c'est CADDY qui fait le TLS. Laisser Mercure tenter
+      # d'obtenir son propre certificat le rendrait injoignable.
+      SERVER_NAME: ":80"
+      MERCURE_PUBLISHER_JWT_KEY: ${MERCURE_JWT_SECRET:?MERCURE_JWT_SECRET obligatoire}
+      MERCURE_SUBSCRIBER_JWT_KEY: ${MERCURE_JWT_SECRET:?MERCURE_JWT_SECRET obligatoire}
+      # Non négociable en production : sans JWT d'abonnement, n'importe quel
+      # navigateur peut écouter les notifications de n'importe quel compte.
+      MERCURE_ALLOW_ANONYMOUS: "false"
+      MERCURE_DEMO_UI: "false"
+      MERCURE_CORS_ORIGINS: https://${PUBLIC_DOMAIN}
+      MERCURE_PUBLISH_ORIGINS: https://${PUBLIC_DOMAIN}
+    logging: *prod-logging
+
+  # -------------------------------------------------------------------------
+  # Mailpit — retiré de la production
+  #
+  # Un service porteur d'un `profiles` ne démarre que si ce profil est
+  # explicitement demandé. Comme aucun profil n'est activé en production,
+  # Mailpit n'est jamais lancé — sans avoir eu à le supprimer du fichier de
+  # développement.
+  # -------------------------------------------------------------------------
+  mailpit:
+    profiles: ["dev-uniquement"]
+
+  # -------------------------------------------------------------------------
+  # Sauvegarde PostgreSQL
+  #
+  # Même image que la base : les versions de pg_dump et du serveur doivent
+  # correspondre, un pg_dump plus ancien que le serveur refuse de travailler.
+  #
+  #   docker compose exec backup pg-backup.sh once      # dump immediat
+  #   docker compose exec backup pg-restore.sh verify   # ESSAI de restauration
+  #   docker compose exec backup pg-restore.sh latest   # chemin du dernier dump
+  # -------------------------------------------------------------------------
+  backup:
+    image: postgres:16-alpine
+    container_name: manga-stream-backup
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/pg-backup.sh"]
+    command: ["loop"]
+    environment:
+      PGHOST: database
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-manga}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?mot de passe PostgreSQL obligatoire}
+      PGDATABASE: ${POSTGRES_DB:-manga_stream}
+      BACKUP_DIR: /backups
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_STARTUP_DELAY: ${BACKUP_STARTUP_DELAY:-300}
+    volumes:
+      - ./infra/backup/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
+      - ./infra/backup/pg-restore.sh:/usr/local/bin/pg-restore.sh:ro
+      # Chemin sur l'HÔTE et non volume nommé, délibérément : les dumps
+      # doivent être lisibles depuis le serveur pour être copiés hors-site
+      # (rsync, restic, rclone) sans passer par `docker cp`.
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
+    depends_on:
+      database:
+        condition: service_healthy
+    logging: *prod-logging
+    networks:
+      - manga-stream
+
+volumes:
+  caddy_data:
+  caddy_config:
+  caddy_logs:

@@ -404,6 +404,54 @@ jobs:
       - name: Validate the compose file
         run: docker compose config --quiet && docker compose config
 
+      # =====================================================================
+      # La surcouche de production doit rester valide.
+      #
+      # Elle n'est jouée nulle part en intégration continue — par définition,
+      # on ne déploie pas depuis un runner. Sans ce contrôle, elle dériverait
+      # en silence du fichier de développement (un service renommé, une ancre
+      # supprimée) et l'écart n'apparaîtrait que le jour de la mise en ligne,
+      # au pire moment.
+      #
+      # `.env.prod.example` sert de jeu de valeurs : plusieurs variables sont
+      # déclarées obligatoires avec la syntaxe `${VAR:?message}`, donc un
+      # oubli dans le modèle fait échouer cette étape. C'est voulu.
+      # =====================================================================
+      - name: Valider la surcouche de production
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            --env-file .env.prod.example config --quiet
+          echo "docker-compose.prod.yml est valide"
+
+          resolved=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+            --env-file .env.prod.example config)
+
+          # Mailpit est un outil de développement : il ne doit jamais figurer
+          # dans la stack déployée.
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+              --env-file .env.prod.example config --services | grep -qx mailpit; then
+            echo "::error title=Mailpit en production::le service mailpit ne doit pas etre actif dans la surcouche de production"
+            exit 1
+          fi
+
+          # Le piège des variables VITE_* figées au build : une image
+          # frontend construite avec des URLs de développement démarre
+          # normalement et n'appelle jamais le bon serveur.
+          if echo "$resolved" | grep -E 'VITE_(API|MERCURE)_URL' | grep -q 'localhost'; then
+            echo "::error title=URLs de dev dans le build frontend::VITE_API_URL / VITE_MERCURE_URL pointent encore sur localhost dans la surcouche de production"
+            exit 1
+          fi
+          echo "aucune URL localhost dans les arguments de build du frontend"
+
+      - name: Valider la configuration Caddy
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e PUBLIC_DOMAIN=exemple.tld -e ACME_EMAIL=ci@exemple.tld \
+            -v "${PWD}/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
       # The entrypoint drives both php-fpm and the Messenger worker: a syntax
       # error there takes down the backend AND the queue. `bash -n` parses the
       # script without executing anything.
@@ -412,6 +460,15 @@ jobs:
           set -euo pipefail
           for script in infra/*/docker-entrypoint.sh; do
             bash -n "$script" && echo "syntax OK: $script"
+          done
+
+          # Les scripts de sauvegarde/restauration sont écrits en sh POSIX
+          # (l'image postgres:16-alpine n'embarque pas bash). On les vérifie
+          # donc avec `sh -n` et pas avec `bash -n` : bash accepte des
+          # constructions que le shell d'alpine refuse.
+          for script in infra/backup/*.sh; do
+            [ -e "$script" ] || continue
+            sh -n "$script" && echo "syntax OK (POSIX sh): $script"
           done
 
       # The worker is not booted here on purpose: with no vendor/ in the repo

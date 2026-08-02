@@ -135,7 +135,7 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${BIND_IP:-0.0.0.0}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - database_data:/var/lib/postgresql/data
     healthcheck:
@@ -171,6 +171,11 @@ services:
       # le chemin critique d'une requête HTTP.
       mailpit:
         condition: service_started
+        # `required: false` : en production Mailpit est desactive par un
+        # profil (voir docker-compose.prod.yml). Sans ce drapeau, compose
+        # refuserait de demarrer en denoncant une dependance vers un service
+        # absent du projet.
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "php -v > /dev/null 2>&1 || exit 1"]
       interval: 15s
@@ -227,6 +232,7 @@ services:
       # par Messenger, mais autant ne pas polluer les logs.
       mailpit:
         condition: service_started
+        required: false
     # Give Messenger time to finish the message in flight on `compose down`.
     stop_grace_period: 30s
     # No healthcheck on purpose: an idle worker with nothing to consume is a
@@ -300,7 +306,7 @@ services:
     container_name: manga-stream-nginx
     restart: unless-stopped
     ports:
-      - "${BACKEND_PORT:-8000}:80"
+      - "${BIND_IP:-0.0.0.0}:${BACKEND_PORT:-8000}:80"
     volumes:
       - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       # Monté sous snippets/ et NON sous conf.d/ : nginx charge d'office
@@ -369,7 +375,7 @@ services:
       VITE_MERCURE_TOPICS: ${VITE_MERCURE_TOPICS:-}
       VITE_USE_MOCKS: ${VITE_USE_MOCKS:-false}
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "${BIND_IP:-0.0.0.0}:${FRONTEND_PORT:-5173}:${FRONTEND_CONTAINER_PORT:-5173}"
     volumes:
       - ./frontend:/app:cached
       # Keep the container node_modules isolated from the host one
@@ -412,8 +418,8 @@ services:
       # chaque redémarrage.
       MP_DATABASE: /data/mailpit.db
     ports:
-      - "${MAILPIT_HTTP_PORT:-8025}:8025"
-      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${BIND_IP:-0.0.0.0}:${MAILPIT_HTTP_PORT:-8025}:8025"
+      - "${BIND_IP:-0.0.0.0}:${MAILPIT_SMTP_PORT:-1025}:1025"
     volumes:
       - mailpit_data:/data
     healthcheck:
@@ -474,7 +480,7 @@ services:
       MERCURE_CORS_ORIGINS: ${MERCURE_CORS_ORIGINS:-http://localhost:5173 http://127.0.0.1:5173 http://localhost:8000}
       MERCURE_PUBLISH_ORIGINS: ${MERCURE_PUBLISH_ORIGINS:-http://localhost:5173 http://localhost:8000 http://localhost:3000}
     ports:
-      - "${MERCURE_PORT:-3000}:80"
+      - "${BIND_IP:-0.0.0.0}:${MERCURE_PORT:-3000}:80"
     volumes:
       - ./infra/mercure/docker-entrypoint.sh:/usr/local/bin/mercure-entrypoint.sh:ro
       - mercure_data:/data

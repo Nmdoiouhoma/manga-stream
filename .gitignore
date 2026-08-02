@@ -9,7 +9,11 @@
 .env
 .env.local
 .env.*.local
+# Environnement réel du serveur. Le modèle, lui, reste versionné.
+.env.prod
+.env.production
 !.env.example
+!.env.prod.example
 !/backend/.env
 !/backend/.env.dev
 !/backend/.env.test
@@ -75,6 +79,20 @@ docker-compose.override.yml
 /infra/**/*.local.conf
 /.docker/
 /data/
+
+# ---------------------------------------------------------------------------
+# Sauvegardes de base de données
+#
+# Un dump contient TOUTES les données réelles : comptes, adresses e-mail,
+# mots de passe hachés, commentaires. Le dépôt est PUBLIC. Ces fichiers ne
+# doivent jamais s'approcher d'un commit, y compris par accident depuis un
+# répertoire de travail sur le serveur.
+# ---------------------------------------------------------------------------
+/backups/
+*.dump
+*.sql
+*.sql.gz
+*.dump.gz
 
 # ---------------------------------------------------------------------------
 # macOS
