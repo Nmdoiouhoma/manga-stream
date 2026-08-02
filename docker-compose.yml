@@ -96,9 +96,12 @@ x-backend-env: &backend-env
   #
   # Valeur de dev : l'IP FIXE de nginx (voir le service `nginx` et le bloc
   # `networks` en bas de fichier), et elle seule. Faire confiance à toute la
-  # plage 172.21.0.0/16 en dev serait une erreur : la passerelle Docker
-  # 172.21.0.1 en fait partie, c'est l'adresse source des requêtes venant du
-  # Mac, et un client pourrait alors usurper son IP via X-Forwarded-For.
+  # plage 172.21.0.0/16 en dev serait une erreur SUR LINUX : les requêtes
+  # venues de l'hôte y arrivent avec l'adresse de la passerelle Docker
+  # (172.21.0.1), qui appartient à cette plage — un client pourrait alors
+  # usurper son IP via X-Forwarded-For. Sous Docker Desktop (macOS) elles
+  # arrivent de 192.168.65.1, hors plage, et le problème ne se voit pas :
+  # raison de plus pour ne pas prendre l'habitude.
   # En production, nginx est lui-même derrière Caddy : les deux sauts sont
   # internes et la valeur devient la plage complète du réseau
   # (voir docker-compose.prod.yml).
