@@ -175,6 +175,67 @@ jobs:
             echo "::notice title=No migration yet::migrations/ is empty -> schema left untouched"
           fi
 
+      # =====================================================================
+      # Garde-fou de contrat : docs/openapi.yaml doit refléter le code.
+      #
+      # Le frontend génère ses types TypeScript directement depuis ce fichier
+      # (`npm run generate:api` -> openapi-typescript). S'il dérive du code,
+      # rien ne casse bruyamment : le front compile contre un contrat faux et
+      # l'écart n'apparaît qu'à l'exécution, souvent chez l'utilisateur. On
+      # régénère donc la spec et on compare.
+      #
+      # Deux précautions qui comptent :
+      #
+      #   * export vers un chemin TEMPORAIRE, jamais vers ../docs. D'abord
+      #     parce qu'un job de CI n'a rien à faire réécrire un fichier versionné
+      #     (il masquerait la dérive au lieu de la signaler), ensuite parce que
+      #     `--output=../docs/...` échoue dès qu'on lance la commande dans le
+      #     conteneur backend, où ../docs n'existe pas.
+      #
+      #   * le runner part d'un checkout neuf, donc sans var/cache. C'est
+      #     précisément ce qui donne sa valeur au test : une spec régénérée
+      #     depuis un cache périmé peut être incomplète et paraître conforme.
+      #     C'est ce qui s'est produit sur ce dépôt — la spec committée décrit
+      #     `popularity` comme filtre mais pas comme propriété des schémas
+      #     Anime/Manga, parce qu'elle a été exportée depuis un conteneur dont
+      #     le cache datait d'avant la migration.
+      # =====================================================================
+      - name: Contrat OpenAPI à jour
+        run: |
+          set -euo pipefail
+
+          committed="../docs/openapi.yaml"
+          generated="${RUNNER_TEMP}/openapi.generated.yaml"
+
+          if [ ! -f "$committed" ]; then
+            echo "::error title=Contrat absent::docs/openapi.yaml est introuvable. Générez-le : cd backend && php bin/console api:openapi:export --yaml --output=../docs/openapi.yaml"
+            exit 1
+          fi
+
+          php bin/console api:openapi:export --yaml --output="$generated"
+
+          if diff -u "$committed" "$generated" > "${RUNNER_TEMP}/openapi.diff" 2>&1; then
+            echo "docs/openapi.yaml est conforme au code."
+            exit 0
+          fi
+
+          echo "::error title=Contrat OpenAPI périmé::docs/openapi.yaml ne correspond plus au code backend. Régénérez-le et committez-le : cd backend && php bin/console api:openapi:export --yaml --output=../docs/openapi.yaml"
+          echo
+          echo "Écart (300 premières lignes de diff, committé vs régénéré) :"
+          head -300 "${RUNNER_TEMP}/openapi.diff"
+          echo
+          echo "Total : $(grep -c '^[+-]' "${RUNNER_TEMP}/openapi.diff" || true) lignes divergentes."
+          exit 1
+
+      - name: Conserver la spec régénérée en cas d'écart
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-regenere
+          path: ${{ runner.temp }}/openapi.generated.yaml
+          retention-days: 3
+          if-no-files-found: ignore
+
       # THE test step. As soon as the backend ships a phpunit configuration the
       # suite runs for real and a single failing test fails the whole pipeline:
       # no `|| true`, no `continue-on-error`, no warning-instead-of-error.
