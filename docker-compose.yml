@@ -182,6 +182,63 @@ services:
       - manga-stream
 
   # -------------------------------------------------------------------------
+  # Planificateur de la synchronisation AniList
+  #
+  # Même image que le backend (donc même code, même vendor/), mais son seul
+  # rôle est de déclencher `app:anilist:sync` une fois par jour.
+  #
+  # Le point important n'est pas « lancer une commande toutes les 24 h » —
+  # crond sait le faire — mais de NE PAS repartir de zéro à chaque
+  # redémarrage. L'état de la dernière exécution vit dans le volume
+  # `anilist_sync_state` ; au démarrage le script relit la date de fin et
+  # n'attend que le temps restant. Cinq `docker compose up` d'affilée ne
+  # déclenchent donc pas cinq synchros.
+  #
+  #   docker compose exec cron anilist-sync-status   # dernière exécution
+  #   docker compose exec cron anilist-sync-now      # forcer maintenant
+  #   docker compose logs -f cron
+  # -------------------------------------------------------------------------
+  cron:
+    build: *backend-build
+    image: manga-stream-backend:dev
+    container_name: manga-stream-cron
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/anilist-cron.sh"]
+    command: ["loop"]
+    environment:
+      <<: *backend-env
+      ANILIST_SYNC_ENABLED: ${ANILIST_SYNC_ENABLED:-true}
+      ANILIST_SYNC_INTERVAL: ${ANILIST_SYNC_INTERVAL:-86400}
+      ANILIST_SYNC_RETRY_DELAY: ${ANILIST_SYNC_RETRY_DELAY:-1800}
+      ANILIST_SYNC_STARTUP_DELAY: ${ANILIST_SYNC_STARTUP_DELAY:-60}
+      ANILIST_SYNC_RUN_ON_BOOT: ${ANILIST_SYNC_RUN_ON_BOOT:-ifnever}
+      ANILIST_SYNC_TYPE: ${ANILIST_SYNC_TYPE:-BOTH}
+      ANILIST_SYNC_PAGES: ${ANILIST_SYNC_PAGES:-5}
+      ANILIST_SYNC_PER_PAGE: ${ANILIST_SYNC_PER_PAGE:-50}
+      ANILIST_SYNC_TIMEOUT: ${ANILIST_SYNC_TIMEOUT:-3600}
+    volumes:
+      - ./backend:/var/www/html:cached
+      - composer_cache:/composer
+      - ./infra/cron/docker-entrypoint.sh:/usr/local/bin/anilist-cron.sh:ro
+      # Raccourcis pour `docker compose exec cron anilist-sync-status|now`.
+      - ./infra/cron/anilist-sync-status:/usr/local/bin/anilist-sync-status:ro
+      - ./infra/cron/anilist-sync-now:/usr/local/bin/anilist-sync-now:ro
+      # L'état DOIT survivre au conteneur : c'est tout l'intérêt.
+      - anilist_sync_state:/state
+    depends_on:
+      database:
+        condition: service_healthy
+    # Une synchro en cours parle à une API externe et écrit en base : on lui
+    # laisse le temps de finir proprement plutôt que de la couper au milieu
+    # d'une page.
+    stop_grace_period: 60s
+    # Pas de healthcheck : un planificateur qui dort en attendant son créneau
+    # est un planificateur en bonne santé. Le vrai indicateur est l'état de la
+    # dernière exécution -> `docker compose exec cron anilist-sync-status`.
+    networks:
+      - manga-stream
+
+  # -------------------------------------------------------------------------
   # nginx -> Symfony front controller
   # -------------------------------------------------------------------------
   nginx:
@@ -325,3 +382,7 @@ volumes:
   frontend_node_modules:
   mercure_data:
   mercure_config:
+  # État du planificateur AniList (dernière exécution, historique, verrou).
+  # Le supprimer (`docker compose down -v`) fait repartir la synchro au
+  # prochain démarrage comme sur un clone neuf.
+  anilist_sync_state:

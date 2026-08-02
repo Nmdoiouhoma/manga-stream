@@ -1,0 +1,4 @@
+#!/bin/sh
+# Raccourci : etat de la derniere synchronisation AniList.
+#   docker compose exec cron anilist-sync-status
+exec /usr/local/bin/anilist-cron.sh status

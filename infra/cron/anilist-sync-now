@@ -1,0 +1,4 @@
+#!/bin/sh
+# Raccourci : force une synchronisation AniList immediate (verrou respecte).
+#   docker compose exec cron anilist-sync-now
+exec /usr/local/bin/anilist-cron.sh now

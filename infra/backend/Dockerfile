@@ -41,8 +41,8 @@ COPY --from=infra backend/php/php-fpm.conf /usr/local/etc/php-fpm.d/zz-manga-str
 # aligned on the host uid/gid so bind-mounted files stay writable.
 RUN addgroup -g ${GID} -S app 2>/dev/null || true \
     && adduser -u ${UID} -S -D -G app -h /home/app -s /bin/bash app 2>/dev/null || true \
-    && mkdir -p /var/www/html /composer \
-    && chown -R ${UID}:${GID} /var/www/html /composer /home/app
+    && mkdir -p /var/www/html /composer /state \
+    && chown -R ${UID}:${GID} /var/www/html /composer /home/app /state
 
 ENV COMPOSER_HOME=/composer \
     COMPOSER_ALLOW_SUPERUSER=0 \
@@ -52,6 +52,18 @@ ENV COMPOSER_HOME=/composer \
 WORKDIR /var/www/html
 
 COPY --from=infra --chmod=0755 backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# NOTE sur /state (créé et donné à `app` plus haut) : c'est le point de montage
+# du volume `anilist_sync_state` du service `cron`. Quand docker initialise un
+# volume nommé VIDE, il recopie le contenu ET les droits du répertoire présent
+# à cet emplacement dans l'image. Sans ce mkdir/chown, le volume naîtrait
+# root:root et le processus `app` ne pourrait rien y écrire : le planificateur
+# perdrait son état à chaque redémarrage, ce qui lui retire sa seule raison
+# d'être.
+#
+# Pas de directive VOLUME ici, volontairement : elle s'appliquerait aussi aux
+# services `backend` et `worker`, qui hériteraient chacun d'un volume anonyme
+# inutile à nettoyer à la main.
 
 USER app
 

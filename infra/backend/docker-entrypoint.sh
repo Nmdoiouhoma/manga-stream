@@ -105,7 +105,13 @@ run_messenger_worker() {
     local not_ready=0
     local status=0
 
-    trap worker_terminate TERM INT
+    # SIGQUIT en plus de TERM/INT : l'image de base php:8.4-fpm-alpine declare
+    # `STOPSIGNAL SIGQUIT` (arret gracieux de php-fpm), donc `docker compose
+    # stop`/`down` envoie SIGQUIT et non SIGTERM. Sans ce trap le signal garde
+    # sa disposition par defaut, ignoree pour PID 1 : le worker restait en vie
+    # tout le stop_grace_period (30 s) puis etait tue en SIGKILL (code 137),
+    # cote a cote avec un message en cours de traitement.
+    trap worker_terminate TERM INT QUIT
 
     log "worker: transport='${transport}' time-limit=${time_limit}s memory-limit=${memory_limit}"
 
