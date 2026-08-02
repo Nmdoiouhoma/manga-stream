@@ -24,6 +24,20 @@ export function safeExternalUrl(raw: string | null | undefined): string | null {
   try {
     const url = new URL(value)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+
+    // ── Passage en https pour les hôtes connus ────────────────────────────
+    // AniList sert ces liens en clair : 1 793 des 1 794 `streamUrl` en base
+    // sont en `http://www.crunchyroll.com/…` (compté sur le backend réel).
+    // Depuis une page servie en https, cliquer envoie l'URL complète — donc
+    // le titre regardé — en clair avant la redirection de Crunchyroll.
+    //
+    // La réécriture est volontairement limitée aux hôtes de `KNOWN_HOSTS` :
+    // ce sont ceux dont on affirme qu'ils servent https. Forcer https sur un
+    // domaine inconnu casserait le lien au lieu de le protéger.
+    if (url.protocol === 'http:' && isKnownHost(url.hostname)) {
+      url.protocol = 'https:'
+    }
+
     return url.toString()
   } catch {
     // URL relative ou syntaxe invalide : pas un lien sortant.
@@ -45,6 +59,10 @@ const KNOWN_HOSTS: ReadonlyArray<[RegExp, string]> = [
   [/(^|\.)wakanim\.tv$/i, 'Wakanim'],
   [/(^|\.)mangadex\.org$/i, 'MangaDex'],
 ]
+
+function isKnownHost(hostname: string): boolean {
+  return KNOWN_HOSTS.some(([pattern]) => pattern.test(hostname))
+}
 
 /**
  * Nom lisible du service derrière une URL. Les hôtes inconnus retombent sur le
