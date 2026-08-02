@@ -251,10 +251,29 @@ services:
   # -------------------------------------------------------------------------
   # Mercure hub (real-time SSE)
   # -------------------------------------------------------------------------
+  # Authorization model, in one paragraph:
+  #   * publishing requires a JWT whose `mercure.publish` claim covers the
+  #     topic -> only the backend holds one;
+  #   * subscribing requires a JWT whose `mercure.subscribe` claim lists the
+  #     topics the connection may read -> the backend mints a token scoped to
+  #     the logged-in user and the browser sends it in the `mercureAuthorization`
+  #     cookie. The hub filters PER CONNECTION: a token scoped on user A never
+  #     delivers user B's updates, even if the client asks for B's topic.
+  #
+  # Anonymous subscriptions are OFF by default (MERCURE_ALLOW_ANONYMOUS=false).
+  # With them on, any browser could open an EventSource on
+  # /api/users/<anyone>/notifications. See infra/mercure/docker-entrypoint.sh.
   mercure:
     image: dunglas/mercure:latest
     container_name: manga-stream-mercure
     restart: unless-stopped
+    # The wrapper computes MERCURE_EXTRA_DIRECTIVES, then `exec "$$@"`.
+    # Beware: per the Compose spec, setting `entrypoint` RESETS the image CMD
+    # to null — the caddy command line must therefore be repeated here. It is
+    # the upstream default of dunglas/mercure; check it after a major image
+    # bump with:  docker image inspect dunglas/mercure --format '{{.Config.Cmd}}'
+    entrypoint: ["/usr/local/bin/mercure-entrypoint.sh"]
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     environment:
       # ":80" forces plain HTTP. Without it Caddy tries to provision a TLS
       # certificate for "localhost" and the hub never becomes reachable.
@@ -263,21 +282,22 @@ services:
       MERCURE_PUBLISHER_JWT_ALG: HS256
       MERCURE_SUBSCRIBER_JWT_KEY: ${MERCURE_JWT_SECRET:-!ChangeThisMercureHubJWTSecretKey!}
       MERCURE_SUBSCRIBER_JWT_ALG: HS256
-      # DEV ONLY: `anonymous` lets the browser subscribe without a JWT and
-      # `demo` exposes the debug UI on /.well-known/mercure/ui/.
-      # Remove both in production.
-      MERCURE_EXTRA_DIRECTIVES: |
-        transport bolt {
-          path /data/mercure.db
-        }
-        cors_origins ${MERCURE_CORS_ORIGINS:-http://localhost:5173 http://127.0.0.1:5173 http://localhost:8000}
-        publish_origins ${MERCURE_PUBLISH_ORIGINS:-http://localhost:5173 http://localhost:8000 http://localhost:3000}
-        anonymous
-        demo
-        subscriptions
+      # false = every subscriber must present a JWT. Flip to true ONLY to
+      # unblock local work, never in a deployed environment.
+      MERCURE_ALLOW_ANONYMOUS: ${MERCURE_ALLOW_ANONYMOUS:-false}
+      # Debug console on /.well-known/mercure/ui/. Off by default.
+      MERCURE_DEMO_UI: ${MERCURE_DEMO_UI:-false}
+      MERCURE_SUBSCRIPTIONS: ${MERCURE_SUBSCRIPTIONS:-true}
+      MERCURE_TRANSPORT_PATH: /data/mercure.db
+      # Credentialed CORS: the browser sends the mercureAuthorization cookie
+      # with `withCredentials`, so the origin list must be exact — "*" is
+      # rejected by the browser as soon as credentials are involved.
+      MERCURE_CORS_ORIGINS: ${MERCURE_CORS_ORIGINS:-http://localhost:5173 http://127.0.0.1:5173 http://localhost:8000}
+      MERCURE_PUBLISH_ORIGINS: ${MERCURE_PUBLISH_ORIGINS:-http://localhost:5173 http://localhost:8000 http://localhost:3000}
     ports:
       - "${MERCURE_PORT:-3000}:80"
     volumes:
+      - ./infra/mercure/docker-entrypoint.sh:/usr/local/bin/mercure-entrypoint.sh:ro
       - mercure_data:/data
       - mercure_config:/config
     healthcheck:
@@ -286,6 +306,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    stop_grace_period: 10s
     networks:
       - manga-stream
 
