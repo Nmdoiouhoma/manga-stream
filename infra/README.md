@@ -1,8 +1,9 @@
 # infra/
 
-Toute l'infrastructure de `manga-stream`. Aucun fichier Docker ne vit dans
-`backend/` ou `frontend/` : les Dockerfiles sont ici et sont référencés depuis
-le `docker-compose.yml` racine.
+Toute l'infrastructure de `manga-stream` — le tracker de catalogue manga /
+anime décrit dans le [README racine](../README.md). Aucun fichier Docker ne vit
+dans `backend/` ou `frontend/` : les Dockerfiles sont ici et sont référencés
+depuis le `docker-compose.yml` racine.
 
 ```
 infra/
@@ -16,9 +17,23 @@ infra/
 ├── frontend/
 │   ├── Dockerfile              # Node 24 (stages: base, deps, dev, build, prod)
 │   └── docker-entrypoint.sh    # npm install auto si node_modules est vide
-└── nginx/
-    ├── default.conf            # vhost backend Symfony -> php-fpm
-    └── frontend-prod.conf      # vhost SPA statique (fallback index.html)
+├── nginx/
+│   ├── default.conf            # vhost backend Symfony -> php-fpm
+│   ├── frontend-prod.conf      # vhost SPA statique (fallback index.html)
+│   └── security-headers.conf   # en-têtes de sécurité partagés
+├── mercure/
+│   ├── docker-entrypoint.sh    # calcule MERCURE_EXTRA_DIRECTIVES
+│   ├── mint-jwt.sh             # forge un JWT publisher/subscriber
+│   └── check-authorization.sh  # vérifie le modèle d'autorisation du hub
+├── cron/
+│   ├── docker-entrypoint.sh    # planificateur AniList, état persistant
+│   ├── anilist-sync-status     # raccourci : dernière exécution
+│   └── anilist-sync-now        # raccourci : forcer une synchro
+├── caddy/
+│   └── Caddyfile               # PRODUCTION : TLS Let's Encrypt, origine unique
+└── backup/
+    ├── pg-backup.sh            # dump PostgreSQL vérifié + rétention
+    └── pg-restore.sh           # ESSAI de restauration, et restauration réelle
 ```
 
 ---
@@ -30,13 +45,44 @@ infra/
 | `database` | `postgres:16-alpine`             | `database`       | 5432         | **5432**  |
 | `backend`  | `infra/backend/Dockerfile` (dev) | `backend`        | 9000 (FPM)   | —         |
 | `worker`   | même image que `backend`         | `worker`         | —            | —         |
+| `cron`     | même image que `backend`         | `cron`           | —            | —         |
 | `nginx`    | `nginx:1.27-alpine`              | `nginx`          | 80           | **8000**  |
 | `frontend` | `infra/frontend/Dockerfile` (dev)| `frontend`       | 5173         | **5173**  |
 | `mercure`  | `dunglas/mercure:latest`         | `mercure`        | 80           | **3000**  |
+| `mailpit`  | `axllent/mailpit:latest`         | `mailpit`        | 1025 / 8025  | **1025 / 8025** |
+
+En production s'ajoutent `caddy` (seul service publié, 80/443) et `backup`,
+et `mailpit` disparaît — voir `docker-compose.prod.yml`.
 
 Tous les conteneurs partagent le réseau bridge `manga-stream`. **Depuis un
 conteneur, on s'adresse aux autres par leur nom de service**, jamais par
 `localhost`.
+
+### Le réseau n'est plus laissé au hasard
+
+Le sous-réseau est **figé** (`DOCKER_SUBNET=172.21.0.0/16`) et nginx porte une
+**adresse réservée** (`NGINX_IP=172.21.0.250`).
+
+Ce n'est pas de la coquetterie : php-fpm ne voit que l'adresse du saut qui le
+précède, et c'est cette adresse que Symfony doit reconnaître comme proxy de
+confiance pour accepter de lire l'IP réelle du visiteur dans `X-Forwarded-For`
+(`SYMFONY_TRUSTED_PROXIES`). Une adresse allouée dynamiquement change à chaque
+recréation du conteneur, et la déclaration devient fausse **en silence** — avec
+pour conséquence un limiteur de débit qui range tout le monde dans le même
+compteur.
+
+En cas de collision avec un autre réseau Docker de la machine (« Pool overlaps
+with other one on this address space »), changer les deux valeurs de façon
+cohérente dans `.env`, puis `docker compose down && docker compose up -d`. Les
+volumes, donc la base, ne sont pas touchés.
+
+> **Vécu, et à retenir.** Après un changement de configuration réseau, un
+> simple `docker compose up -d` redémarre certains conteneurs sans les
+> recréer — et ceux-là **perdent leur alias DNS de service**. Symptôme :
+> `getent hosts database` ne renvoie plus rien depuis le backend, alors que
+> l'IP répond parfaitement, et le backend boucle sur « waiting for
+> database ». Le remède est un `docker compose up -d --force-recreate`, une
+> fois.
 
 ### `database`
 
@@ -140,6 +186,53 @@ garder les connexions SSE ouvertes).
 Le code backend est monté en lecture seule : nginx en a besoin pour résoudre
 `$realpath_root` et servir les fichiers statiques de `public/`.
 
+#### Propagation de l'identité du visiteur
+
+Le bloc `location ~ ^/index\.php` transmet explicitement à PHP, en
+`fastcgi_param` :
+
+| Paramètre                | Valeur                        | Rôle                                        |
+| ------------------------ | ----------------------------- | ------------------------------------------- |
+| `HTTP_X_FORWARDED_FOR`   | `$proxy_add_x_forwarded_for`  | chaîne des sauts, observation de nginx en dernier |
+| `HTTP_X_FORWARDED_PROTO` | `$forwarded_proto`            | `https` dès que l'amont l'annonce           |
+| `HTTP_X_FORWARDED_HOST`  | `$forwarded_host`             | domaine public                              |
+| `HTTP_X_FORWARDED_PORT`  | `$forwarded_port`             | port public                                 |
+| `HTTP_X_REAL_IP`         | `$remote_addr`                | diagnostic                                  |
+| `HTTPS`                  | `$https_flag` `if_not_empty`  | convention CGI                              |
+
+Deux points qui comptent :
+
+- **nginx ne fabrique aucun de ces en-têtes tout seul.** Il retransmet ceux
+  reçus du client, et rien de plus. Sans ces lignes, l'application ne dispose
+  d'aucune information sur le visiteur dès qu'il y a plus d'un saut ;
+- **un en-tête déclaré ici n'est pas retransmis une seconde fois depuis la
+  requête cliente** — nginx l'exclut de la retransmission automatique. C'est
+  ce qui rend la valeur non contournable : un client qui envoie
+  `X-Forwarded-For: 1.2.3.4` produit `1.2.3.4, <son IP réelle>`, et Symfony,
+  qui remonte la chaîne de droite à gauche, retient son IP réelle.
+
+`$forwarded_proto` provient d'un `map` : il reprend `X-Forwarded-Proto` quand
+l'amont en fournit un, et retombe sur `$scheme` sinon. Derrière Caddy, la
+connexion vers nginx est en clair alors que le visiteur est en `https` — sans
+ce report, Symfony génère des URLs absolues en `http` (liens de
+réinitialisation de mot de passe) et ne pose jamais les cookies `secure`.
+
+Le format de journal `manga_stream_proxy` affiche côte à côte ce que nginx voit
+et ce qu'il transmet : `docker compose logs -f nginx`.
+
+### `mailpit`
+
+Serveur SMTP de développement. Il accepte tout, n'expédie rien, et présente les
+messages sur **http://localhost:8025**. `MAILER_DSN=smtp://mailpit:1025` est
+injectée dans `backend` **et** `worker` — c'est le worker qui expédie
+réellement dès que l'envoi passe par Messenger.
+
+L'image est minimale (ni `curl` ni `wget`) : le healthcheck utilise la sonde
+intégrée au binaire, `/mailpit readyz`.
+
+En production, le service est rangé dans un profil inactif par
+`docker-compose.prod.yml` : il ne démarre pas.
+
 ### `frontend`
 
 Serveur de dev Vite lancé avec `--host 0.0.0.0` (sans quoi il n'écouterait que
@@ -182,10 +275,18 @@ utiliser deux clés distinctes.
 
 ```bash
 cp .env.example .env
-docker compose up -d              # toute la stack
-docker compose up -d database mercure   # juste l'infra sans le code applicatif
+docker compose up -d              # toute la stack (8 services)
+docker compose up -d database mercure mailpit   # juste l'infra, sans le code applicatif
 docker compose ps                 # vérifier les healthchecks
 docker compose down               # arrêt, volumes conservés
+```
+
+En production, les deux fichiers compose se superposent :
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+docker compose config | less      # TOUJOURS relire avant de démarrer
+docker compose up -d
 ```
 
 Reconstruire après modification d'un Dockerfile :
@@ -204,6 +305,81 @@ Construire et tester l'image frontend de production :
 docker build -f infra/frontend/Dockerfile --target prod \
   --build-context infra=./infra -t manga-stream-frontend:prod ./frontend
 docker run --rm -p 8080:80 manga-stream-frontend:prod
+```
+
+---
+
+## Production : `caddy/` et `backup/`
+
+Détail complet de la mise en ligne dans la section « Déploiement » du
+[README racine](../README.md#déploiement). Ce qui vit ici :
+
+### `caddy/Caddyfile`
+
+Point d'entrée public unique en production. Termine le TLS (Let's Encrypt,
+renouvellement automatique) et répartit sur **une seule origine** :
+
+```
+/                       -> frontend  (bundle statique)
+/api/*                  -> nginx     -> php-fpm -> Symfony
+/.well-known/mercure*   -> mercure   (SSE)
+```
+
+Trois détails qui font la différence entre « ça marche » et « ça marche
+vraiment » :
+
+- **`flush_interval -1`** sur le hub Mercure. Sans lui, Caddy tamponne le flux
+  SSE : la connexion `EventSource` s'ouvre normalement, aucune erreur n'est
+  levée nulle part, et les évènements arrivent en rafale ou jamais ;
+- **`header_up X-Forwarded-For {remote_host}`** écrase la chaîne au lieu de la
+  compléter. Par défaut Caddy ajoute son observation à la valeur reçue du
+  client ; ici on ne veut conserver aucune valeur d'origine cliente ;
+- **HSTS posé par Caddy**, et non dans `nginx/security-headers.conf` où il est
+  volontairement commenté. La stack de développement n'a pas de TLS, et un HSTS
+  émis en clair est mémorisé des mois par le navigateur, qui refuse ensuite
+  tout accès `http` au domaine — `localhost` compris.
+
+Validation hors ligne :
+
+```bash
+docker run --rm -e PUBLIC_DOMAIN=exemple.tld -e ACME_EMAIL=a@b.c \
+  -v "$PWD/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+> `caddy validate` signale « Unnecessary header_up X-Forwarded-For ». C'est un
+> faux positif : Caddy pose bien cet en-tête tout seul, mais en **ajoutant** à
+> la valeur reçue, alors qu'on veut l'**écraser**.
+
+### `backup/`
+
+`pg-backup.sh` produit un dump `pg_dump -Fc`, **le relit**
+(`pg_restore --list`) et ne le renomme en `.dump` qu'après vérification —
+pendant l'écriture il porte l'extension `.partial`. Un dump interrompu par un
+disque plein a une taille tout à fait plausible ; sans relecture, on ne
+découvre son inutilité que le jour où on en a besoin. Rétention par
+`BACKUP_RETENTION_DAYS`.
+
+`pg-restore.sh` a trois modes :
+
+| Commande                        | Effet                                                       |
+| ------------------------------- | ----------------------------------------------------------- |
+| `pg-restore.sh verify [dump]`   | restaure dans une base **jetable**, compare table par table le nombre de lignes avec la production, supprime la base jetable. **Ne touche pas aux données.** |
+| `pg-restore.sh restore <dump>`  | la vraie restauration — **écrase** la base. Exige `I_UNDERSTAND=yes` |
+| `pg-restore.sh latest`          | chemin du dump le plus récent                                |
+
+Les deux scripts sont en **`sh` POSIX** et non en bash : `postgres:16-alpine`
+n'embarque pas bash. La CI les vérifie avec `sh -n` pour la même raison.
+
+Utilisables sans la surcouche de production, sur la stack de développement :
+
+```bash
+docker run --rm --network manga-stream_manga-stream \
+  -e PGHOST=database -e PGUSER=manga -e PGPASSWORD=manga -e PGDATABASE=manga_stream \
+  -e BACKUP_DIR=/backups \
+  -v "$PWD/infra/backup/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro" \
+  -v "$PWD/backups:/backups" \
+  postgres:16-alpine /usr/local/bin/pg-backup.sh once
 ```
 
 ---
@@ -246,4 +422,11 @@ d'où les `COPY --from=infra …` dans les Dockerfiles. Cela nécessite BuildKit
 | Le worker répète « transport 'async' is not declared » | Le transport `async` est encore commenté dans `backend/config/packages/messenger.yaml` |
 | Le worker répète « not queryable / messenger_messages » | La migration créant `messenger_messages` n'a pas été jouée : `docker compose exec backend php bin/console doctrine:migrations:migrate` |
 | Le worker ne voit pas un nouveau message handler | Il exécute le code monté mais garde son cache : `docker compose restart worker` |
-| Port déjà utilisé | Surcharger `BACKEND_PORT` / `FRONTEND_PORT` / `MERCURE_PORT` / `POSTGRES_PORT` dans `.env` |
+| Port déjà utilisé | Surcharger `BACKEND_PORT` / `FRONTEND_PORT` / `MERCURE_PORT` / `POSTGRES_PORT` / `MAILPIT_HTTP_PORT` dans `.env` |
+| `Connection refused` sur le port 1025 depuis le backend | Le DSN pointe sur `localhost` au lieu de `mailpit` : dans le conteneur backend, `localhost` c'est le backend |
+| Aucun mail dans Mailpit alors que l'API répond OK | L'envoi est routé en asynchrone : c'est le **worker** qui expédie. `docker compose logs -f worker` |
+| `getent hosts database` ne répond plus, backend bloqué sur « waiting for database » | Alias DNS perdu par un conteneur redémarré sans être recréé après un changement de config réseau. `docker compose up -d --force-recreate` |
+| L'application limite tous les utilisateurs d'un coup | `SYMFONY_TRUSTED_PROXIES` ne couvre pas tous les sauts : l'IP retenue est celle d'un proxy. Voir le journal `manga_stream_proxy` de nginx |
+| `Pool overlaps with other one on this address space` | `DOCKER_SUBNET` entre en collision avec un autre réseau Docker : en choisir un autre, et ajuster `NGINX_IP` en conséquence |
+| En production, la page s'affiche mais l'application appelle `localhost` | Image frontend construite avec les `VITE_*` de développement : `docker compose build --no-cache frontend` |
+| En production, aucune notification n'arrive | `MERCURE_PUBLIC_URL` n'est pas l'URL publique en `https`, ou le hub est servi depuis une autre origine que la page (le `connect-src 'self'` de la CSP la bloque alors) |
