@@ -211,39 +211,72 @@ function violationProblem(violations: Array<{ propertyPath: string; message: str
 }
 
 /**
- * Cohérence statut / progression, telle que le backend la valide en parallèle.
+ * Cohérence progression / œuvre, calquée sur `App\Validator\CoherentProgress`
+ * (livré côté backend le 2026-08-02, relu pour aligner ces mocks).
  *
- * Mocké ici pour que le front puisse vérifier son rendu du 422 sans dépendre du
- * calendrier du backend. La règle : `COMPLETED` exige la progression au total,
- * et la progression ne peut dépasser le total. Un total inconnu ne valide rien
- * — c'est le cas fréquent des séries en cours.
+ * Deux règles seulement, et **pas** celle qu'on attendrait :
+ *   - un anime se suit en épisodes, un manga en chapitres — renseigner le
+ *     mauvais compteur est un 422 ;
+ *   - le compteur ne peut pas dépasser le total annoncé.
+ *
+ * `COMPLETED` avec une progression trop basse n'est **pas** rejeté : le backend
+ * le *normalise* (`App\State\ProgressCompletionProvider` porte le compteur au
+ * total et renvoie la valeur corrigée dans la réponse). Mocker un 422 là-dessus
+ * entraînerait le front contre un comportement qui n'existe pas.
+ *
+ * Un total inconnu ne valide rien : c'est le cas fréquent des séries en cours.
  */
 function coherenceViolations(input: {
-  status: string | null | undefined
   current: number | null
+  otherCounter: number | null
   total: number | null
   isAnime: boolean
 }): Array<{ propertyPath: string; message: string }> {
-  const { status, current, total, isAnime } = input
-  if (total === null || total <= 0) return []
-
+  const { current, otherCounter, total, isAnime } = input
   const field = isAnime ? 'currentEpisode' : 'currentChapter'
   const noun = isAnime ? 'épisode' : 'chapitre'
   const out: Array<{ propertyPath: string; message: string }> = []
 
-  if (current !== null && current > total) {
+  if (otherCounter !== null) {
+    out.push(
+      isAnime
+        ? {
+            propertyPath: 'currentChapter',
+            message:
+              'Un anime se suit en épisodes : renseignez « currentEpisode », pas « currentChapter ».',
+          }
+        : {
+            propertyPath: 'currentEpisode',
+            message:
+              'Un manga se suit en chapitres : renseignez « currentChapter », pas « currentEpisode ».',
+          },
+    )
+  }
+
+  if (total !== null && total > 0 && current !== null && current > total) {
     out.push({
       propertyPath: field,
-      message: `Le ${noun} courant (${current}) dépasse le total de ce titre (${total}).`,
+      message: `Le ${noun} courant (${current}) dépasse le nombre ${
+        isAnime ? "d'épisodes" : 'de chapitres'
+      } de la série (${total}).`,
     })
   }
-  if (status === 'COMPLETED' && (current === null || current < total)) {
-    out.push({
-      propertyPath: field,
-      message: `Un titre marqué comme terminé doit être au ${noun} ${total}.`,
-    })
-  }
+
   return out
+}
+
+/**
+ * « Terminé » implique une progression complète : le backend normalise au lieu
+ * de rejeter, et renvoie la valeur corrigée. Reproduit ici, sinon le front
+ * mocké verrait son champ verrouillé sans que le serveur confirme jamais.
+ */
+function normalizeCompletion(
+  status: string | null | undefined,
+  total: number | null,
+  isAnime: boolean,
+): { currentEpisode?: number; currentChapter?: string } {
+  if (status !== 'COMPLETED' || total === null || total <= 0) return {}
+  return isAnime ? { currentEpisode: total } : { currentChapter: total.toFixed(2) }
 }
 
 /** `currentChapter` circule en string ("12.50") ; le total est un entier. */
@@ -699,16 +732,19 @@ export const handlers = [
     if (!target) return problem(422, `Ressource inconnue : ${targetIri}`)
 
     const isAnime = target.kind === 'anime'
+    const total = totalOf(target)
+    const sentEpisode = (body.currentEpisode as number | null) ?? null
+    const sentChapter = numberOrNull(body.currentChapter)
+
     const violations = coherenceViolations({
-      status: body.status as string | null,
-      current: isAnime
-        ? ((body.currentEpisode as number | null) ?? null)
-        : numberOrNull(body.currentChapter),
-      total: totalOf(target),
+      current: isAnime ? sentEpisode : sentChapter,
+      otherCounter: isAnime ? sentChapter : sentEpisode,
+      total,
       isAnime,
     })
     if (violations.length > 0) return violationProblem(violations)
 
+    const normalized = normalizeCompletion(body.status as string | null, total, isAnime)
     const id = takeId()
     const entry = {
       '@id': `/api/progress/${id}`,
@@ -717,9 +753,9 @@ export const handlers = [
       user: userRef(user),
       anime: target.kind === 'anime' ? target.ref : null,
       manga: target.kind === 'manga' ? target.ref : null,
-      currentEpisode: (body.currentEpisode as number | null) ?? null,
+      currentEpisode: normalized.currentEpisode ?? sentEpisode,
       // Kept as a **string**: the contract serialises `decimal(8,2)` that way.
-      currentChapter: (body.currentChapter as string | null) ?? null,
+      currentChapter: normalized.currentChapter ?? ((body.currentChapter as string | null) ?? null),
       status: (body.status as MockProgress['status']) ?? 'PLANNED',
       score: (body.score as number | null) ?? null,
       updatedAt: new Date().toISOString(),
@@ -762,22 +798,27 @@ export const handlers = [
         ? body.currentChapter
         : entry.currentChapter) as string | null,
     }
+    const total = totalOf(
+      isAnime
+        ? { kind: 'anime', ref: entry.anime as { episodeCount?: number | null } }
+        : { kind: 'manga', ref: entry.manga as { chapterCount?: number | null } },
+    )
     const violations = coherenceViolations({
-      status: merged.status,
       current: isAnime ? merged.currentEpisode : numberOrNull(merged.currentChapter),
-      total: totalOf(
-        isAnime
-          ? { kind: 'anime', ref: entry.anime as { episodeCount?: number | null } }
-          : { kind: 'manga', ref: entry.manga as { chapterCount?: number | null } },
-      ),
+      otherCounter: isAnime ? numberOrNull(merged.currentChapter) : merged.currentEpisode,
+      total,
       isAnime,
     })
     if (violations.length > 0) return violationProblem(violations)
+
+    const normalized = normalizeCompletion(merged.status, total, isAnime)
 
     if ('status' in body) entry.status = body.status as MockProgress['status']
     if ('currentEpisode' in body) entry.currentEpisode = body.currentEpisode as number | null
     if ('currentChapter' in body) entry.currentChapter = body.currentChapter as string | null
     if ('score' in body) entry.score = body.score as number | null
+    if (normalized.currentEpisode !== undefined) entry.currentEpisode = normalized.currentEpisode
+    if (normalized.currentChapter !== undefined) entry.currentChapter = normalized.currentChapter
     entry.updatedAt = new Date().toISOString()
 
     return HttpResponse.json(

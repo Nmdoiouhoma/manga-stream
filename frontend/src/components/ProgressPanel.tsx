@@ -35,9 +35,16 @@ import { formatChapterNumber, parseDecimal, type MediaDetail } from '../types/me
  * cours : One Piece n'en a aucun. Sans total, on ne verrouille rien et on ne
  * suggère rien — la saisie reste libre.
  *
- * Le backend valide la même règle et répond 422 ; ses violations sont affichées
- * telles quelles, ce garde-fou d'interface n'étant pas une garantie (données
- * de contrat divergentes, requête concurrente).
+ * ── Ce que fait le backend, vérifié dans son code ─────────────────────────
+ * `App\State\ProgressCompletionProvider` **normalise** : un `COMPLETED` reçu
+ * avec un compteur trop bas est porté au total, et la valeur corrigée revient
+ * dans la réponse. Il ne renvoie donc *pas* de 422 sur cette règle-là — le
+ * pré-remplissage ci-dessous n'est pas une condition d'acceptation, c'est ce
+ * qui rend la correction visible avant l'envoi plutôt qu'après.
+ *
+ * `App\Validator\CoherentProgress` rejette en revanche (422) un compteur qui
+ * dépasse le total, et un compteur du mauvais type (un chapitre sur un anime).
+ * Ces violations sont affichées champ par champ, jamais brutes.
  */
 export function ProgressPanel({ media }: { media: MediaDetail }) {
   const { isAuthenticated } = useAuth()
