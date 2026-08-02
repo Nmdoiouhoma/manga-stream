@@ -15,6 +15,11 @@ parameters:
     app.anilist.min_interval: 1.2
     app.anilist.max_retries: 4
 
+    # Durée de vie du JWT abonné Mercure remis au navigateur. Alignée sur celle du
+    # jeton d'API : le client renouvelle les deux au même rythme, via
+    # `GET /api/mercure/subscription`.
+    app.mercure.subscriber_ttl: '%env(int:JWT_TTL)%'
+
 services:
     # default configuration for services in *this* file
     _defaults:

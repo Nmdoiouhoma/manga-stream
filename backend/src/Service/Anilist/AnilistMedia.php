@@ -17,6 +17,8 @@ use App\Enum\MediaStatus;
 final readonly class AnilistMedia
 {
     /**
+     * @param ?int         $popularity nombre d'utilisateurs AniList ayant l'œuvre en liste
+     * @param ?int         $duration   durée moyenne d'un épisode, en minutes (anime uniquement)
      * @param list<string> $genres
      */
     public function __construct(
@@ -32,6 +34,8 @@ final readonly class AnilistMedia
         public ?int $chapters,
         public ?int $volumes,
         public ?int $averageScore,
+        public ?int $popularity,
+        public ?int $duration,
         public ?MediaStatus $status,
         public ?AnimeSeason $season,
         public ?int $seasonYear,
@@ -86,6 +90,8 @@ final readonly class AnilistMedia
             chapters: self::positiveInt($node['chapters'] ?? null),
             volumes: self::positiveInt($node['volumes'] ?? null),
             averageScore: self::score($node['averageScore'] ?? null),
+            popularity: self::positiveInt($node['popularity'] ?? null),
+            duration: self::positiveInt($node['duration'] ?? null),
             status: self::enum(MediaStatus::class, $node['status'] ?? null),
             season: self::enum(AnimeSeason::class, $node['season'] ?? null),
             seasonYear: self::year($node['seasonYear'] ?? null),
@@ -133,7 +139,12 @@ final readonly class AnilistMedia
         return '' === $text ? null : $text;
     }
 
-    private static function positiveInt(mixed $value): ?int
+    /**
+     * Public parce que {@see AnilistClient::parseEpisodes()} normalise les mêmes
+     * entiers AniList (`episodes`, `duration`, `airingSchedule.episode`) et doit le
+     * faire exactement de la même manière.
+     */
+    public static function positiveInt(mixed $value): ?int
     {
         if (!\is_int($value) && !(\is_string($value) && ctype_digit($value))) {
             return null;
