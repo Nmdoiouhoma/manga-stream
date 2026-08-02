@@ -27,6 +27,17 @@ security:
                 password_path: password
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
+            # Force brute : 12 échecs d'affilée sur le même compte renvoyaient
+            # 12 × 401 sans jamais bloquer. Le limiteur est celui de Symfony, mais
+            # avec nos compteurs (voir App\Security\LoginRateLimiter) : le natif
+            # n'indexe que sur l'IP et sur le couple IP+identifiant, ce qu'une
+            # attaque distribuée sur un compte précis contourne sans effort.
+            #
+            # Le blocage lève TooManyLoginAttemptsAuthenticationException, que
+            # LoginThrottlingFailureListener traduit en 429 + Retry-After — sans lui
+            # lexik répondrait 401, indiscernable d'un mot de passe faux.
+            login_throttling:
+                limiter: App\Security\LoginRateLimiter
 
         # POST /api/register : création de compte, nécessairement ouverte.
         register:

@@ -1,0 +1,71 @@
+# -----------------------------------------------------------------------------
+# Limitation de débit sur les points d'entrée non authentifiés.
+#
+# Constat avant ce fichier, mesuré au curl : 12 échecs de connexion d'affilée sur
+# le même compte renvoyaient 12 × 401 sans jamais bloquer, et 5 inscriptions en
+# rafale renvoyaient 5 × 201. La force brute et la création de comptes en masse
+# étaient donc l'une et l'autre gratuites.
+#
+# Fenêtre glissante partout : le compteur ne se vide pas d'un coup à heure fixe,
+# ce qui interdit l'astuce classique consistant à attendre la remise à zéro pour
+# repartir avec un quota plein.
+#
+# ATTENTION : l'état vit dans le pool `cache.rate_limiter`, donc dans le cache de
+# l'application. Sur plusieurs conteneurs PHP, chacun compterait de son côté ; le
+# jour où l'API est répliquée, ce pool devra pointer sur un stockage partagé
+# (Redis). En l'état — un seul conteneur backend — le compte est exact.
+# -----------------------------------------------------------------------------
+framework:
+    rate_limiter:
+        # --- Connexion ---------------------------------------------------------
+        # Trois compteurs combinés par App\Security\LoginRateLimiter. Le plus
+        # restreint des trois décide.
+
+        # Par IP, toutes cibles confondues : freine le balayage d'un annuaire
+        # d'e-mails depuis une même machine, où aucun compte n'est essayé deux fois.
+        login_ip:
+            policy: sliding_window
+            limit: 25
+            interval: '15 minutes'
+
+        # Par (IP, identifiant) : la limite demandée, ~5 essais / 15 min.
+        login_ip_identifier:
+            policy: sliding_window
+            limit: 5
+            interval: '15 minutes'
+
+        # Par identifiant SEUL, toutes IP confondues. C'est celui qui manque au
+        # limiteur natif de Symfony (DefaultLoginRateLimiter n'indexe que sur l'IP
+        # et sur le couple IP+identifiant) : sans lui, une attaque distribuée sur
+        # un compte précis contourne les deux autres compteurs en changeant d'IP.
+        # Plus haut que 5 à dessein : ce compteur est partagé par les utilisateurs
+        # légitimes du compte, on ne veut pas les verrouiller pour un attaquant.
+        login_identifier:
+            policy: sliding_window
+            limit: 15
+            interval: '15 minutes'
+
+        # --- Inscription -------------------------------------------------------
+        # Par IP. Compteur COMMUN à POST /api/register et à son alias déprécié
+        # POST /api/users : deux portes sur la même pièce, un seul verrou.
+        registration_ip:
+            policy: sliding_window
+            limit: 3
+            interval: '1 hour'
+
+        # --- Mot de passe oublié ----------------------------------------------
+        # Chaque appel accepté déclenche un e-mail : sans limite, l'endpoint est
+        # une arme de spam pointée sur n'importe quelle boîte.
+        password_reset_ip:
+            policy: sliding_window
+            limit: 5
+            interval: '1 hour'
+
+        # Par adresse visée, toutes IP confondues. Épuisé, il n'empêche PAS la
+        # réponse 204 — il empêche seulement l'envoi. Renvoyer 429 ici distinguerait
+        # une adresse déjà sollicitée d'une adresse inconnue, et rendrait à
+        # l'endpoint le rôle d'oracle qu'on lui a précisément retiré.
+        password_reset_email:
+            policy: sliding_window
+            limit: 3
+            interval: '1 hour'

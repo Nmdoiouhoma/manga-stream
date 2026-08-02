@@ -18,6 +18,16 @@ services:
             $publicUrl: 'http://mercure.invalid/.well-known/mercure'
             $secret: 'test-only-not-a-secret-32-bytes-minimum-for-hs256'
 
+    # Pool où vivent les compteurs de limitation de débit. Rendu public pour que
+    # ApiTestCase puisse le vider avant CHAQUE test : contrairement à la base, il
+    # n'est pas protégé par la transaction de dama/doctrine-test-bundle et
+    # survivrait donc d'un test à l'autre. Sans ce vidage, le quota d'inscription
+    # (3 comptes/heure) serait épuisé par les premiers tests et ferait tomber tous
+    # les suivants — pour une raison rigoureusement invisible dans le rapport.
+    test.cache.rate_limiter:
+        alias: cache.rate_limiter
+        public: true
+
     # Remplace le hub réel partout où `HubInterface` est injecté — ce que fait tout le
     # code applicatif. On se garde de redéfinir `mercure.hub.default` lui-même : ce
     # service est décoré par le bundle (collecteur de données du profiler), et le

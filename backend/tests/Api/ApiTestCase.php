@@ -12,6 +12,7 @@ use App\Entity\Manga;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 /**
@@ -33,6 +34,23 @@ abstract class ApiTestCase extends BaseApiTestCase
     protected function setUp(): void
     {
         self::bootKernel();
+        $this->resetRateLimiters();
+    }
+
+    /**
+     * Vide les compteurs de limitation de débit.
+     *
+     * Ils vivent dans un pool de cache sur disque, hors de la transaction annulée
+     * par dama/doctrine-test-bundle : sans ce vidage ils s'accumuleraient d'un test
+     * à l'autre. Le quota d'inscription (3 comptes/heure et par IP) serait épuisé
+     * dès les premiers tests, et tous les suivants échoueraient en 429 — pour une
+     * raison introuvable dans le rapport de PHPUnit.
+     */
+    protected function resetRateLimiters(): void
+    {
+        $pool = self::getContainer()->get('test.cache.rate_limiter');
+        \assert($pool instanceof CacheItemPoolInterface);
+        $pool->clear();
     }
 
     /**

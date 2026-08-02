@@ -31,5 +31,17 @@ services:
     App\:
         resource: '../src/'
 
+    # Limiteur de connexion : trois compteurs, câblés explicitement. L'autowiring
+    # par nom d'argument existe pour les limiteurs, mais il repose sur une
+    # convention (`$loginIpLimiter` -> `limiter.login_ip`) qu'un simple renommage
+    # d'argument casserait en silence — sur un garde-fou de sécurité, on préfère
+    # une erreur de conteneur à un limiteur muet.
+    App\Security\LoginRateLimiter:
+        arguments:
+            $ipLimiter: '@limiter.login_ip'
+            $ipIdentifierLimiter: '@limiter.login_ip_identifier'
+            $identifierLimiter: '@limiter.login_identifier'
+            $secret: '%kernel.secret%'
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

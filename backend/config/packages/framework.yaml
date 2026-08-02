@@ -5,6 +5,29 @@ framework:
     # Note that the session will be started ONLY if you read or write from it.
     session: true
 
+    # -------------------------------------------------------------------------
+    # Proxys de confiance.
+    #
+    # php-fpm ne voit jamais l'IP du visiteur : il voit celle de nginx. Sans cette
+    # déclaration, `Request::getClientIp()` renvoie l'adresse du proxy pour TOUT LE
+    # MONDE — et les limiteurs de débit indexés sur l'IP mettent alors l'ensemble
+    # des utilisateurs dans un unique compteur : le premier attaquant bloque tout le
+    # site.
+    #
+    # La valeur vient de l'environnement (SYMFONY_TRUSTED_PROXIES, posé dans
+    # docker-compose.yml sur l'IP fixe de nginx). Elle est volontairement VIDE par
+    # défaut : sans proxy déclaré, Symfony ignore purement et simplement
+    # `X-Forwarded-For`. C'est le bon réglage par défaut — faire confiance à un
+    # en-tête que n'importe quel client peut écrire offrirait à l'attaquant une IP
+    # neuve à chaque requête, donc un nombre illimité de tentatives.
+    #
+    # `trusted_headers` est restreint aux en-têtes réellement posés par nginx. Le
+    # format `Forwarded` (RFC 7239) n'en est pas : nginx n'en émet pas, et
+    # l'accepter ouvrirait une seconde voie d'usurpation sans contrepartie.
+    # -------------------------------------------------------------------------
+    trusted_proxies: '%env(default::SYMFONY_TRUSTED_PROXIES)%'
+    trusted_headers: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix']
+
     #esi: true
     #fragments: true
 
@@ -13,3 +36,7 @@ when@test:
         test: true
         session:
             storage_factory_id: session.storage.factory.mock_file
+        # Les tests tournent sans proxy : aucune confiance accordée, `getClientIp()`
+        # renvoie l'adresse réelle du client de test. Les limiteurs sont donc
+        # mesurés sur la même clé qu'en production derrière nginx.
+        trusted_proxies: null
