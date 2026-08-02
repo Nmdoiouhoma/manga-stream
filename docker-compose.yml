@@ -85,10 +85,14 @@ x-backend-env: &backend-env
   # configuration n'est nécessaire côté backend, il suffit que la variable
   # existe.
   #
-  # Pourquoi ça compte : php-fpm ne voit jamais l'IP du visiteur, il voit
-  # celle de nginx. Sans cette variable, un limiteur de débit indexé sur
-  # l'IP mettrait TOUS les utilisateurs dans le même compteur, et le premier
-  # attaquant bloquerait tout le monde.
+  # Pourquoi ça compte : en FastCGI, REMOTE_ADDR est l'adresse de celui qui a
+  # ouvert la connexion vers nginx. En dev, un seul saut, c'est bien le
+  # visiteur. En PRODUCTION, nginx est derrière Caddy : REMOTE_ADDR vaut l'IP
+  # du conteneur Caddy, la même pour tout le monde. Un limiteur de débit
+  # indexé sur l'IP rangerait alors tous les utilisateurs dans un seul
+  # compteur et le premier attaquant bloquerait tout le monde. La seule
+  # information restante sur le visiteur est la chaîne X-Forwarded-For, que
+  # Symfony n'accepte de lire que si REMOTE_ADDR figure dans cette liste.
   #
   # Valeur de dev : l'IP FIXE de nginx (voir le service `nginx` et le bloc
   # `networks` en bas de fichier), et elle seule. Faire confiance à toute la

@@ -10301,7 +10301,19 @@ components:
       description: 'Notification utilisateur.'
     Progress-progress.read:
       type: object
-      description: "Suivi de visionnage/lecture d'un utilisateur."
+      description: |-
+        Suivi de visionnage/lecture d'un utilisateur.
+
+        Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+        `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+        manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+        est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+        aucune borne haute n'est alors appliquée).
+
+        `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+        porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+        Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+        est donc enregistré à 25.
       properties:
         id:
           readOnly: true
@@ -10349,7 +10361,19 @@ components:
         - status
     Progress-progress.read_progress.item.read:
       type: object
-      description: "Suivi de visionnage/lecture d'un utilisateur."
+      description: |-
+        Suivi de visionnage/lecture d'un utilisateur.
+
+        Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+        `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+        manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+        est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+        aucune borne haute n'est alors appliquée).
+
+        `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+        porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+        Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+        est donc enregistré à 25.
       properties:
         id:
           readOnly: true
@@ -10397,7 +10421,19 @@ components:
         - status
     Progress-progress.write:
       type: object
-      description: "Suivi de visionnage/lecture d'un utilisateur."
+      description: |-
+        Suivi de visionnage/lecture d'un utilisateur.
+
+        Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+        `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+        manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+        est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+        aucune borne haute n'est alors appliquée).
+
+        `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+        porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+        Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+        est donc enregistré à 25.
       properties:
         user:
           description: |-
@@ -10450,7 +10486,19 @@ components:
         - status
     Progress-progress.write.jsonMergePatch:
       type: object
-      description: "Suivi de visionnage/lecture d'un utilisateur."
+      description: |-
+        Suivi de visionnage/lecture d'un utilisateur.
+
+        Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+        `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+        manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+        est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+        aucune borne haute n'est alors appliquée).
+
+        `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+        porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+        Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+        est donc enregistré à 25.
       properties:
         user:
           description: |-
@@ -10549,7 +10597,19 @@ components:
               format: date-time
           required:
             - status
-      description: "Suivi de visionnage/lecture d'un utilisateur."
+      description: |-
+        Suivi de visionnage/lecture d'un utilisateur.
+
+        Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+        `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+        manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+        est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+        aucune borne haute n'est alors appliquée).
+
+        `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+        porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+        Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+        est donc enregistré à 25.
     Progress.jsonld-progress.read_progress.item.read:
       allOf:
         - $ref: '#/components/schemas/HydraItemBaseSchema'
@@ -10600,7 +10660,19 @@ components:
               format: date-time
           required:
             - status
-      description: "Suivi de visionnage/lecture d'un utilisateur."
+      description: |-
+        Suivi de visionnage/lecture d'un utilisateur.
+
+        Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+        `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+        manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+        est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+        aucune borne haute n'est alors appliquée).
+
+        `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+        porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+        Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+        est donc enregistré à 25.
     Recommendation-recommendation.read:
       type: object
       description: "Recommandations de l'utilisateur courant, recalculées si elles sont périmées."
@@ -11330,7 +11402,19 @@ tags:
   - name: Notification
     description: 'Notification utilisateur.'
   - name: Progress
-    description: "Suivi de visionnage/lecture d'un utilisateur."
+    description: |-
+      Suivi de visionnage/lecture d'un utilisateur.
+
+      Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+      `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+      manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+      est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+      aucune borne haute n'est alors appliquée).
+
+      `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+      porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+      Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+      est donc enregistré à 25.
   - name: Recommendation
     description: 'Recommandation personnalisée (anime ou manga) pour un utilisateur.'
   - name: User

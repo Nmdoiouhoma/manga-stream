@@ -18,6 +18,7 @@ use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Enum\ProgressStatus;
 use App\Repository\ProgressRepository;
+use App\Validator\CoherentProgress;
 use App\Validator\ExactlyOneMediaTarget;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
@@ -34,12 +35,26 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Index(name: 'idx_progress_status', columns: ['status'])]
 #[ORM\HasLifecycleCallbacks]
 #[ExactlyOneMediaTarget]
+#[CoherentProgress]
 // Une seule progression par utilisateur et par œuvre (cf. index uniques).
 #[UniqueEntity(fields: ['user', 'anime'], message: 'Vous suivez déjà cet anime.')]
 #[UniqueEntity(fields: ['user', 'manga'], message: 'Vous suivez déjà ce manga.')]
 #[ApiResource(
     shortName: 'Progress',
-    description: 'Suivi de visionnage/lecture d\'un utilisateur.',
+    description: <<<'TXT'
+        Suivi de visionnage/lecture d'un utilisateur.
+
+        Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+        `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+        manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+        est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+        aucune borne haute n'est alors appliquée).
+
+        `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+        porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+        Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+        est donc enregistré à 25.
+        TXT,
     operations: [
         new GetCollection(security: "is_granted('ROLE_USER')"),
         new Get(
