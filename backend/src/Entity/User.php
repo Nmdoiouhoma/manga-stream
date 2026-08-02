@@ -58,7 +58,16 @@ use Symfony\Component\Validator\Constraints as Assert;
         // ne soit pas capté par le motif `/api/users/{id}`.
         new Get(
             uriTemplate: '/me',
-            normalizationContext: ['groups' => ['user:read', 'user:item:read']],
+            normalizationContext: [
+                'groups' => ['user:read', 'user:item:read'],
+                // `@id` doit être l'IRI CANONIQUE du compte, pas celle de l'opération.
+                // API Platform génère `@id` à partir de l'opération en cours : sans
+                // cela, `/api/me` se décrivait lui-même par `"@id": "/api/me"`. Or le
+                // frontend récupère précisément cette valeur pour la renvoyer en
+                // `Favorite.user` ou `Progress.user` — et `/api/me` n'y est pas une
+                // référence valide. On force donc l'opération item de User.
+                'item_uri_template' => '/users/{id}',
+            ],
             security: "is_granted('ROLE_USER')",
             provider: MeProvider::class,
             read: true,

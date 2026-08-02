@@ -23,5 +23,7 @@ when@test:
                 url: 'http://mercure.invalid/.well-known/mercure'
                 public_url: 'http://mercure.invalid/.well-known/mercure'
                 jwt:
-                    secret: 'test-only-not-a-secret'
+                    # HS256 impose une clé d'au moins 256 bits : lcobucci/jwt refuse de
+                    # signer en dessous, et l'émission du jeton abonné échouerait.
+                    secret: 'test-only-not-a-secret-32-bytes-minimum-for-hs256'
                     publish: ['*']

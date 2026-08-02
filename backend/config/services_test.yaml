@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+# Services spécifiques à l'environnement de test.
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    # Hub Mercure enregistreur : la suite de tests ne doit ouvrir AUCUNE socket vers le
+    # hub. Sans cela, les tests dépendraient du conteneur `mercure` et échoueraient en
+    # CI (ou masqueraient une régression derrière un timeout réseau).
+    #
+    # `public: true` : les tests récupèrent le double depuis le conteneur pour lire les
+    # updates enregistrées.
+    App\Tests\Double\RecordingHub:
+        public: true
+        arguments:
+            $publicUrl: 'http://mercure.invalid/.well-known/mercure'
+            $secret: 'test-only-not-a-secret-32-bytes-minimum-for-hs256'
+
+    # Remplace le hub réel partout où `HubInterface` est injecté — ce que fait tout le
+    # code applicatif. On se garde de redéfinir `mercure.hub.default` lui-même : ce
+    # service est décoré par le bundle (collecteur de données du profiler), et le
+    # remplacer par un alias entrerait en conflit avec cette décoration.
+    Symfony\Component\Mercure\HubInterface: '@App\Tests\Double\RecordingHub'

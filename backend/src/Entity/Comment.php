@@ -8,6 +8,7 @@ use ApiPlatform\Doctrine\Orm\Filter\ExistsFilter;
 use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
 use ApiPlatform\Metadata\ApiFilter;
+use ApiPlatform\Metadata\ApiProperty;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
@@ -15,6 +16,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use App\Repository\CommentRepository;
+use App\State\CommentNotifyProcessor;
 use App\Validator\ExactlyOneMediaTarget;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -36,7 +38,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new GetCollection(),
         new Get(normalizationContext: ['groups' => ['comment:read', 'comment:item:read']]),
-        new Post(security: "is_granted('ROLE_USER')"),
+        new Post(security: "is_granted('ROLE_USER')", processor: CommentNotifyProcessor::class),
         new Patch(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Seul l\'auteur peut modifier son commentaire.'),
         new Delete(
             security: "is_granted('ROLE_ADMIN') or (is_granted('ROLE_USER') and object.getUser() === user)",
@@ -88,7 +90,15 @@ class Comment implements OwnedByUser
 
     /**
      * Commentaire parent lorsque celui-ci est une réponse.
+     *
+     * `readableLink`/`writableLink` à `false` — sans quoi le contrat décrivait `parent`
+     * comme un **objet Comment imbriqué**, alors que l'API a toujours attendu et
+     * renvoyé une IRI. La relation étant récursive (Comment -> Comment), API Platform
+     * voyait la classe cible sérialisable dans les mêmes groupes et en déduisait un
+     * lien embarqué. Résultat : le contrat mentait sur la seule relation qui ne
+     * ressemblait à aucune autre, et les clients générés typaient `parent` en objet.
      */
+    #[ApiProperty(readableLink: false, writableLink: false)]
     #[ORM\ManyToOne(targetEntity: self::class, inversedBy: 'replies')]
     #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
     #[Groups(['comment:read', 'comment:write'])]

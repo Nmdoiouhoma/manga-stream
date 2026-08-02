@@ -16,6 +16,7 @@ framework:
 
         routing:
             App\Message\SyncAnilistPage: async
+            App\Message\SyncAnilistEpisodes: async
 
 when@test:
     framework:
