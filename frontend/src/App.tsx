@@ -7,6 +7,8 @@ import { RecommendationsPage } from './pages/RecommendationsPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { PasswordForgotPage } from './pages/PasswordForgotPage'
+import { PasswordResetPage } from './pages/PasswordResetPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { NotificationBell } from './components/NotificationBell'
 import { RequireAuth } from './auth/RequireAuth'
@@ -103,6 +105,11 @@ export default function App() {
 
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+
+        {/* Hors `RequireAuth` par nature : on y arrive justement sans pouvoir
+            se connecter. Le jeton du lien reçu par email tient lieu de preuve. */}
+        <Route path="/password/forgot" element={<PasswordForgotPage />} />
+        <Route path="/password/reset" element={<PasswordResetPage />} />
 
         <Route
           path="/favorites"

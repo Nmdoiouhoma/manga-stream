@@ -85,6 +85,12 @@ export function LoginPage() {
         </form>
 
         <p className="auth__switch">
+          <Link to="/password/forgot" className="link">
+            Mot de passe oublié ?
+          </Link>
+        </p>
+
+        <p className="auth__switch">
           Pas encore de compte ? <Link to="/register" className="link">Créer un compte</Link>
         </p>
       </div>

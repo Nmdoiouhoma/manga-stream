@@ -504,6 +504,39 @@ function round4(value: number): number {
   return Math.round(value * 10_000) / 10_000
 }
 
+/* ── Réinitialisation de mot de passe (état en mémoire) ──────────────────── */
+
+/** Jetons émis, par valeur. Vidés au rechargement : c'est un mock. */
+const resetTokens = new Map<string, { email: string; expiresAt: number }>()
+
+const RATE_LIMIT_MAX = 3
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
+const rateLimitHits = new Map<string, number[]>()
+
+/**
+ * Limitation de débit, comme celle que le backend ajoute sur `forgot`.
+ *
+ * Mockée parce que le 429 est un chemin d'interface à part entière — il porte
+ * un `Retry-After` que la page doit lire et traduire — et qu'on ne peut pas le
+ * déclencher à la demande sur un backend réel sans se bloquer soi-même.
+ *
+ * @returns le nombre de secondes à attendre, ou `null` si la requête passe.
+ */
+function rateLimit(key: string): number | null {
+  const now = Date.now()
+  const hits = (rateLimitHits.get(key) ?? []).filter((at) => now - at < RATE_LIMIT_WINDOW_MS)
+
+  if (hits.length >= RATE_LIMIT_MAX) {
+    rateLimitHits.set(key, hits)
+    const oldest = hits[0] ?? now
+    return Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MS - (now - oldest)) / 1000))
+  }
+
+  hits.push(now)
+  rateLimitHits.set(key, hits)
+  return null
+}
+
 export const handlers = [
   /* ── Auth ─────────────────────────────────────────────────────────────── */
 
@@ -542,6 +575,85 @@ export const handlers = [
       { '@context': '/api/contexts/User', ...user },
       { status: 201, headers: LD_JSON },
     )
+  }),
+
+  /* ── Réinitialisation de mot de passe ─────────────────────────────────────
+   * ⚠️ Ces deux routes ne sont **pas** dans `docs/openapi.yaml` au 2026-08-02,
+   * et le backend qui tourne répond 404 sur les deux (vérifié au curl). Elles
+   * sont mockées d'après la spécification annoncée, pour que les écrans soient
+   * construits et exerçables dès maintenant :
+   *
+   *     POST /api/password/forgot  { email }                → 204
+   *     POST /api/password/reset   { token, plainPassword } → 204 | 400 | 422
+   *
+   * À revérifier — et à supprimer si le contrat diverge — dès que
+   * `npm run generate:api` connaît ces opérations.
+   */
+
+  http.post('*/api/password/forgot', async ({ request }) => {
+    await delay(400)
+    const body = (await request.json().catch(() => ({}))) as { email?: string }
+    const email = body.email?.trim().toLowerCase() ?? ''
+
+    if (email === '') return problem(422, 'email est requis.')
+
+    const wait = rateLimit(`forgot:${email}`)
+    if (wait !== null) {
+      // Le vrai en-tête, pas un corps d'erreur : c'est `Retry-After` que le
+      // front lit pour annoncer le délai.
+      return new HttpResponse(null, { status: 429, headers: { 'Retry-After': String(wait) } })
+    }
+
+    const user = findUserByEmail(email)
+    if (user) {
+      const token = `mock-reset-${Math.random().toString(36).slice(2, 10)}`
+      resetTokens.set(token, { email, expiresAt: Date.now() + 3_600_000 })
+      // L'équivalent mocké de Mailpit : sans ça, impossible d'atteindre l'écran
+      // suivant en local, le lien n'étant envoyé nulle part. `warn` et non
+      // `info` parce que c'est le seul niveau que le lint autorise — et il n'est
+      // pas usurpé : un lien de réinitialisation en clair dans la console n'a
+      // rien à faire ailleurs qu'en mode mocké.
+      console.warn(
+        `[msw] Lien de réinitialisation pour ${email} :\n` +
+          `${window.location.origin}/password/reset?token=${token}`,
+      )
+    }
+
+    // 204 dans TOUS les cas, compte existant ou non. C'est la protection
+    // contre l'énumération des comptes ; la casser ici la testerait à l'envers.
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post('*/api/password/reset', async ({ request }) => {
+    await delay(400)
+    const body = (await request.json().catch(() => ({}))) as {
+      token?: string
+      plainPassword?: string
+    }
+    const token = body.token?.trim() ?? ''
+    const plainPassword = body.plainPassword ?? ''
+
+    if (plainPassword.length < 8) {
+      return violationProblem([
+        {
+          propertyPath: 'plainPassword',
+          message: 'Le mot de passe doit faire au moins 8 caractères.',
+        },
+      ])
+    }
+
+    const record = resetTokens.get(token)
+    if (!record || record.expiresAt < Date.now()) {
+      resetTokens.delete(token)
+      return problem(400, 'Ce lien de réinitialisation est invalide ou a expiré.')
+    }
+
+    passwords.set(record.email, plainPassword)
+    // Jeton à usage unique : le laisser vivre permettrait de rejouer le lien
+    // depuis l'historique du navigateur ou un email transféré.
+    resetTokens.delete(token)
+
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.get('*/api/me', async ({ request }) => {
