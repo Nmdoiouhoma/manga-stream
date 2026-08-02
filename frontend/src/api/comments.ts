@@ -23,20 +23,42 @@ type Comment = components['schemas']['Comment.jsonld-comment.read']
 type CommentWrite = components['schemas']['Comment-comment.write']
 
 /**
- * ⚠️ Contract bug worth reporting to the backend.
+ * ⚠️ Écart de contrat, corrigé côté backend mais **pas encore régénéré**.
  *
- * `Comment-comment.write.parent` is generated as a **nested write object**
- * (`Comment-comment.write | null`) instead of an `iri-reference`, unlike every
- * other relation in the contract (`user`, `anime`, `manga` are all
- * `format: iri-reference`). It is a self-referencing association, and the
- * OpenAPI factory did not resolve it the same way.
+ * `Comment.parent` est décrit — en lecture comme en écriture — par un objet
+ * `Comment` imbriqué au lieu d'une `iri-reference`, contrairement à toutes les
+ * autres relations (`user`, `anime`, `manga` sont en `format: iri-reference`).
+ * L'association est récursive et la fabrique OpenAPI en déduisait un lien
+ * embarqué.
  *
- * API Platform's deserialiser accepts an IRI string for that property at
- * runtime — that is the normal way to post a reply — so we send an IRI and
- * override the type here rather than build a bogus nested object that the
- * backend would have to un-nest.
+ * Le backend l'a corrigé le 2026-08-02 (`readableLink`/`writableLink` à
+ * `false`) et l'API renvoie bien une IRI — vérifié :
+ * `"parent": "/api/comments/11"`. Mais `docs/openapi.yaml` n'a pas encore été
+ * régénéré, donc le type généré ment toujours dans les deux sens.
+ *
+ * Conséquence concrète, et c'est pour ça que ce n'est pas cosmétique : lire
+ * `comment.parent?.['@id']` sur une chaîne renvoie `undefined`, chaque réponse
+ * devient orpheline et le fil s'aplatit en une liste de racines. D'où
+ * `parentIriOf()`, qui accepte les deux formes. À conserver après la
+ * régénération : c'est ce qui rend la lecture indifférente à la forme servie.
  */
 type CommentWriteBody = Omit<CommentWrite, 'parent'> & { parent?: string | null }
+
+/**
+ * IRI du parent, que l'API la serve en chaîne (forme réelle depuis le
+ * 2026-08-02) ou en objet embarqué (forme encore décrite par le contrat).
+ */
+function parentIriOf(comment: Comment): string | null {
+  // `unknown` plutôt qu'un cast direct : le type généré affirme un objet, la
+  // réalité est une chaîne, et seule une inspection à l'exécution tranche.
+  const parent: unknown = comment.parent
+  if (typeof parent === 'string') return parent.trim() || null
+  if (typeof parent === 'object' && parent !== null) {
+    const iri = (parent as Record<string, unknown>)['@id']
+    if (typeof iri === 'string') return iri
+  }
+  return null
+}
 type CommentPostBody = NonNullable<
   paths['/api/comments']['post']['requestBody']
 >['content']['application/ld+json']
@@ -69,7 +91,7 @@ function toNode(comment: Comment): CommentNode {
     authorIri: comment.user?.['@id'] ?? null,
     authorName: comment.user?.username || 'Utilisateur',
     createdAt: comment.createdAt ?? null,
-    parentIri: comment.parent?.['@id'] ?? null,
+    parentIri: parentIriOf(comment),
     replies: [],
   }
 }

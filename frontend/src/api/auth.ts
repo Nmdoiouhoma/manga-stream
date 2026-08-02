@@ -29,16 +29,27 @@ type User =
 /**
  * The user's **resource** IRI, `/api/users/{id}`.
  *
- * ⚠️ Not simply `user['@id']`. `GET /api/me` is a custom operation and API
- * Platform answers it with `"@id": "/api/me"` — the *operation* IRI, not the
- * resource one. Verified against the running backend on 2026-08-01.
+ * ── Historique ────────────────────────────────────────────────────────────
+ * `GET /api/me` répondait `"@id": "/api/me"` — l'IRI de l'*opération*, pas
+ * celle de la ressource. Or c'est cette valeur que le front renvoie dans
+ * `Favorite.user`, `Progress.user`, `Comment.user`, et que les filtres
+ * `?user=` comparent. Écart remonté au backend, **corrigé** le 2026-08-02
+ * (`item_uri_template`) : `GET /api/me` renvoie désormais
+ * `"@id": "/api/users/16"` — revérifié contre le backend qui tourne.
  *
- * That distinction is not cosmetic: this IRI is what `Favorite.user`,
- * `Progress.user` and `Comment.user` reference, and what the `?user=` filters
- * are matched against. Sending `/api/me` there happens to be tolerated today
- * (the backend overrides `user` server-side and API Platform silently drops an
- * unresolvable filter value), but it is wrong, and it would break the moment
- * either of those behaviours changed.
+ * ── Pourquoi la fonction reste ────────────────────────────────────────────
+ * Elle est devenue un no-op : la première branche accepte l'IRI telle quelle.
+ * Elle est conservée comme garde-fou, pour trois raisons.
+ *  1. `docs/openapi.yaml` n'a pas encore été régénéré ; rien dans le contrat
+ *     ne fige encore la correction.
+ *  2. Le mode de panne est silencieux et coûteux : une IRI d'opération
+ *     envoyée en `Favorite.user` est aujourd'hui tolérée (le backend impose
+ *     le propriétaire depuis le jeton, et API Platform ignore une valeur de
+ *     filtre non résolvable) — donc une régression ne se verrait pas tout de
+ *     suite, elle se verrait quand ces deux comportements changeraient.
+ *  3. Elle coûte deux lignes et aucune requête.
+ * À supprimer une fois le contrat régénéré et la correction couverte par un
+ * test côté backend.
  */
 function canonicalUserIri(user: User): string {
   const iri = user['@id']
