@@ -1,0 +1,51 @@
+# ===========================================================================
+# manga-stream :: surcouche « tunnel Cloudflare »
+#
+# S'empile SUR docker-compose.prod.yml pour exposer la stack sans VPS :
+#
+#   docker compose --env-file .env.prod \
+#     -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tunnel.yml \
+#     up -d
+#
+# CE QU'ELLE CHANGE, ET POURQUOI
+#
+#   * Caddy n'écoute plus que sur 127.0.0.1:8080. Le tunnel `cloudflared`
+#     tourne sur l'hôte et s'y connecte en local ; publier sur 0.0.0.0
+#     exposerait la stack en clair sur le réseau local, sans le TLS de
+#     Cloudflare — exactement ce qu'on cherche à éviter.
+#
+#   * Ports 443 et 443/udp retirés. Aucun certificat n'est demandé ici : c'est
+#     Cloudflare qui termine le TLS à sa bordure.
+#
+#   * Caddyfile.tunnel remplace le Caddyfile de production : pas d'ACME, écoute
+#     sur :80 pour n'importe quel nom d'hôte (l'URL d'un tunnel éphémère est
+#     aléatoire et inconnue au démarrage du conteneur).
+#
+# LIMITE ASSUMÉE : un tunnel éphémère change d'URL à chaque redémarrage de
+# `cloudflared`. Plusieurs variables de .env.prod la contiennent
+# (DEFAULT_URI, MERCURE_PUBLIC_URL, CORS_ALLOW_ORIGIN) — il faut donc les
+# régénérer et relancer la stack. Pour une adresse stable, il faut un tunnel
+# nommé, qui suppose un compte Cloudflare et un domaine.
+# ===========================================================================
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:${TUNNEL_PORT:-8080}:80"
+    volumes: !override
+      - ./infra/caddy/Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Les sauvegardes visent /srv/manga-stream/backups sur un VPS Linux. Sur un
+  # poste de développement ce chemin n'existe pas, et Docker Desktop refuse de
+  # monter un dossier hors des répertoires partagés — le service échouait au
+  # démarrage et bloquait toute la stack. Un volume nommé lève la contrainte
+  # sans rien changer au script, qui écrit toujours dans /backups.
+  backup:
+    volumes: !override
+      - tunnel_backups:/backups
+      - ./infra/backup/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
+      - ./infra/backup/pg-restore.sh:/usr/local/bin/pg-restore.sh:ro
+
+volumes:
+  tunnel_backups:

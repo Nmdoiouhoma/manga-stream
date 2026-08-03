@@ -1,0 +1,94 @@
+# ===========================================================================
+# manga-stream :: reverse proxy derrière un tunnel Cloudflare
+#
+# Variante de Caddyfile pour une exposition via `cloudflared`, sans VPS.
+#
+# CE QUI CHANGE PAR RAPPORT À LA PRODUCTION :
+#
+#   * Aucun ACME, aucun certificat. C'est Cloudflare qui termine le TLS à sa
+#     bordure ; le tunnel achemine ensuite du HTTP en clair sur une liaison
+#     sortante chiffrée. Demander un certificat ici échouerait de toute façon :
+#     le challenge HTTP-01 exige que le port 80 soit joignable depuis
+#     l'extérieur, ce que le tunnel ne fournit pas.
+#
+#   * Écoute sur `:80` pour n'importe quel nom d'hôte. Un tunnel éphémère
+#     produit une URL aléatoire en *.trycloudflare.com, inconnue au démarrage
+#     du conteneur — la configuration ne peut donc pas la nommer.
+#
+#   * Pas de HSTS. L'en-tête serait mémorisé pour *.trycloudflare.com, un
+#     domaine partagé par tous les tunnels éphémères du monde : on imposerait
+#     du HTTPS à des inconnus, des mois durant.
+#
+#   * Pas de redirection www : un tunnel n'a pas de sous-domaine.
+#
+# CE QUI NE CHANGE PAS — et c'est l'essentiel : une seule origine sert le
+# frontend, l'API et Mercure. Le navigateur ne voit qu'un domaine, donc aucun
+# CORS, et le `connect-src 'self'` de la CSP reste valable.
+# ===========================================================================
+{
+	# Le tunnel est le seul chemin d'entrée : Caddy n'a aucune raison de
+	# tenter du HTTPS, et `auto_https off` évite qu'il ouvre un écouteur 443
+	# et sollicite Let's Encrypt au démarrage.
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+
+	header {
+		# Caddy annonce sa version par défaut.
+		-Server
+	}
+
+	# -----------------------------------------------------------------------
+	# API Symfony
+	# -----------------------------------------------------------------------
+	handle /api/* {
+		reverse_proxy nginx:80 {
+			# X-Forwarded-For ÉCRASÉ, pas complété : sans cela un visiteur
+			# peut préfixer sa propre valeur et fausser l'IP vue par la
+			# limitation de débit.
+			#
+			# Nuance propre au tunnel : `remote_host` est ici l'adresse du
+			# conteneur cloudflared, pas celle du visiteur. La véritable IP
+			# cliente arrive dans `CF-Connecting-IP`, posé par Cloudflare.
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	# -----------------------------------------------------------------------
+	# Hub Mercure (Server-Sent Events)
+	# -----------------------------------------------------------------------
+	handle /.well-known/mercure* {
+		reverse_proxy mercure:80 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+			header_up X-Forwarded-Proto https
+
+			# LA ligne qui fait vivre ou mourir le temps réel : sans elle,
+			# Caddy tamponne la réponse et le navigateur ne reçoit rien.
+			flush_interval -1
+
+			transport http {
+				response_header_timeout 0
+				read_timeout 0
+			}
+		}
+	}
+
+	# -----------------------------------------------------------------------
+	# SPA — tout le reste
+	# -----------------------------------------------------------------------
+	handle {
+		reverse_proxy frontend:80 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
