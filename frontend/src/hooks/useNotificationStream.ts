@@ -64,6 +64,17 @@ function ownerIriOf(data: unknown): string | null {
 }
 
 /**
+ * Vrai pour une notification annonçant une réponse à un commentaire.
+ *
+ * Aussi défensif qu'`ownerIriOf` : le hub peut livrer n'importe quelle forme,
+ * et un type inconnu doit simplement ne rien déclencher plutôt que lever.
+ */
+function isCommentReply(data: unknown): boolean {
+  if (typeof data !== 'object' || data === null) return false
+  return (data as Record<string, unknown>).type === 'COMMENT_REPLY'
+}
+
+/**
  * L'abonnement courant : celui reçu à la connexion tant qu'il est valide,
  * sinon un neuf demandé au backend.
  *
@@ -148,6 +159,19 @@ export function useNotificationStream(): MercureStatus {
       // et des publications privées, ce cas ne doit jamais se produire.
       if (owner !== null && userIri !== null && owner !== userIri) return
       void queryClient.invalidateQueries({ queryKey: notificationsQueryKey(userIri) })
+
+      // Être prévenu d'une réponse qu'on ne voit pas est absurde : la cloche
+      // s'incrémentait en direct pendant que le fil restait figé jusqu'au
+      // rechargement. On invalide donc aussi les commentaires.
+      //
+      // Le préfixe seul, sans l'œuvre concernée : le payload porte le
+      // commentaire et son parent, jamais l'IRI du média. Cibler précisément
+      // demanderait de l'ajouter côté backend. Le coût est nul ici — React
+      // Query ne refetch que les requêtes *actives*, donc au plus la fiche
+      // ouverte à cet instant.
+      if (isCommentReply(data)) {
+        void queryClient.invalidateQueries({ queryKey: ['comments'] })
+      }
     },
     [queryClient, userIri],
   )
