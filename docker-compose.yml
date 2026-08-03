@@ -77,6 +77,11 @@ x-backend-env: &backend-env
   # de passe, notifications). Doit être une adresse valide syntaxiquement,
   # Mailpit ne vérifie pas le domaine.
   MAILER_FROM: ${MAILER_FROM:-no-reply@manga-stream.local}
+  # Base des liens envoyés par mail (réinitialisation de mot de passe). C'est le
+  # FRONTEND qui sert /password/reset, pas l'API : pointer ici vers le port 8000
+  # enverrait l'utilisateur sur une route inexistante. En production, l'URL
+  # publique du front.
+  FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:5173}
   # -------------------------------------------------------------------------
   # Proxys de confiance (Symfony >= 6.3)
   #

@@ -480,6 +480,64 @@ export interface paths {
         patch: operations["api_notifications_id_patch"];
         trace?: never;
     };
+    "/api/password/forgot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Demande un e-mail de réinitialisation de mot de passe.
+         * @description Répond **204 quelle que soit l'adresse envoyée**, existante ou non.
+         *     C'est délibéré : distinguer les deux cas transformerait l'endpoint en
+         *     oracle d'énumération des comptes. Le client ne doit donc jamais
+         *     afficher « adresse inconnue ».
+         *
+         *     L'e-mail part en tâche de fond (Messenger) : la réponse n'attend pas
+         *     le serveur SMTP. Le lien reste valide **une heure** et ne sert
+         *     **qu'une fois** ; toute demande antérieure encore en vol est
+         *     invalidée.
+         *
+         *     Limité en débit — voir la réponse `429`.
+         */
+        post: operations["api_passwordforgot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pose un nouveau mot de passe à partir d'un jeton reçu par e-mail.
+         * @description Le jeton est à usage unique et expire au bout d'une heure. Un jeton
+         *     inconnu, déjà consommé ou expiré donne un **422** — sans jamais
+         *     préciser lequel des trois, faute de quoi le message renseignerait un
+         *     attaquant sur l'état des jetons en circulation.
+         *
+         *     Le succès invalide le jeton ET toutes les autres demandes en cours
+         *     pour ce compte.
+         *
+         *     Limité en débit — voir la réponse `429`.
+         */
+        post: operations["api_passwordreset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/progress": {
         parameters: {
             query?: never;
@@ -2274,7 +2332,35 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
         };
-        /** @description Suivi de visionnage/lecture d'un utilisateur. */
+        /** @description Envoie un lien de réinitialisation si un compte correspond. */
+        "PasswordForgot-password.forgot": {
+            /**
+             * Format: email
+             * @example utilisateur@example.com
+             */
+            email: string | null;
+        };
+        /** @description Réinitialise le mot de passe associé au jeton. */
+        "PasswordReset-password.reset": {
+            /** @description Jeton brut reçu par e-mail, tel qu'il figure dans le lien. */
+            token: string | null;
+            /** @description Nouveau mot de passe en clair. */
+            plainPassword: string | null;
+        };
+        /**
+         * @description Suivi de visionnage/lecture d'un utilisateur.
+         *
+         *     Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+         *     `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+         *     manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+         *     est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+         *     aucune borne haute n'est alors appliquée).
+         *
+         *     `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+         *     porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+         *     Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+         *     est donc enregistré à 25.
+         */
         "Progress-progress.read": {
             readonly id?: number;
             user?: components["schemas"]["User-progress.read"];
@@ -2293,7 +2379,20 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
-        /** @description Suivi de visionnage/lecture d'un utilisateur. */
+        /**
+         * @description Suivi de visionnage/lecture d'un utilisateur.
+         *
+         *     Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+         *     `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+         *     manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+         *     est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+         *     aucune borne haute n'est alors appliquée).
+         *
+         *     `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+         *     porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+         *     Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+         *     est donc enregistré à 25.
+         */
         "Progress-progress.read_progress.item.read": {
             readonly id?: number;
             user?: components["schemas"]["User-progress.read_progress.item.read"];
@@ -2312,7 +2411,20 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
-        /** @description Suivi de visionnage/lecture d'un utilisateur. */
+        /**
+         * @description Suivi de visionnage/lecture d'un utilisateur.
+         *
+         *     Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+         *     `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+         *     manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+         *     est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+         *     aucune borne haute n'est alors appliquée).
+         *
+         *     `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+         *     porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+         *     Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+         *     est donc enregistré à 25.
+         */
         "Progress-progress.write": {
             /**
              * Format: iri-reference
@@ -2344,7 +2456,20 @@ export interface components {
             /** @description Note personnelle de l'utilisateur, sur 100. */
             score?: number | null;
         };
-        /** @description Suivi de visionnage/lecture d'un utilisateur. */
+        /**
+         * @description Suivi de visionnage/lecture d'un utilisateur.
+         *
+         *     Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+         *     `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+         *     manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+         *     est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+         *     aucune borne haute n'est alors appliquée).
+         *
+         *     `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+         *     porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+         *     Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+         *     est donc enregistré à 25.
+         */
         "Progress-progress.write.jsonMergePatch": {
             /**
              * Format: iri-reference
@@ -2376,7 +2501,20 @@ export interface components {
             /** @description Note personnelle de l'utilisateur, sur 100. */
             score?: number | null;
         };
-        /** @description Suivi de visionnage/lecture d'un utilisateur. */
+        /**
+         * @description Suivi de visionnage/lecture d'un utilisateur.
+         *
+         *     Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+         *     `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+         *     manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+         *     est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+         *     aucune borne haute n'est alors appliquée).
+         *
+         *     `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+         *     porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+         *     Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+         *     est donc enregistré à 25.
+         */
         "Progress.jsonld-progress.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
             user?: components["schemas"]["User.jsonld-progress.read"];
@@ -2395,7 +2533,20 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
-        /** @description Suivi de visionnage/lecture d'un utilisateur. */
+        /**
+         * @description Suivi de visionnage/lecture d'un utilisateur.
+         *
+         *     Cohérence imposée par l'API (422 `application/problem+json` sinon) :
+         *     `currentEpisode` n'a de sens que sur un anime, `currentChapter` que sur un
+         *     manga, et ni l'un ni l'autre ne peut dépasser le total de l'œuvre lorsqu'il
+         *     est connu (`episodeCount` / `chapterCount` sont null pour une série en cours :
+         *     aucune borne haute n'est alors appliquée).
+         *
+         *     `status: COMPLETED` est en revanche NORMALISÉ, pas rejeté : le compteur est
+         *     porté au total de l'œuvre et la valeur corrigée est renvoyée dans la réponse.
+         *     Un `{"status": "COMPLETED", "currentEpisode": 1}` sur une série de 25 épisodes
+         *     est donc enregistré à 25.
+         */
         "Progress.jsonld-progress.read_progress.item.read": components["schemas"]["HydraItemBaseSchema"] & {
             readonly id?: number;
             user?: components["schemas"]["User.jsonld-progress.read_progress.item.read"];
@@ -2661,6 +2812,8 @@ export interface components {
             username: string;
             /** @description Mot de passe en clair (écriture seule). */
             plainPassword: string | null;
+            /** @description Mot de passe actuel, obligatoire pour modifier `plainPassword` sur son propre compte (écriture seule). */
+            currentPassword?: string | null;
         };
         /** @description Compte utilisateur. */
         "User-user.write.jsonMergePatch": {
@@ -2673,6 +2826,8 @@ export interface components {
             username: string;
             /** @description Mot de passe en clair (écriture seule). */
             plainPassword?: string | null;
+            /** @description Mot de passe actuel, obligatoire pour modifier `plainPassword` sur son propre compte (écriture seule). */
+            currentPassword?: string | null;
         };
         /** @description Compte utilisateur. */
         "User.jsonld-comment.read": components["schemas"]["HydraItemBaseSchema"] & {
@@ -4708,6 +4863,26 @@ export interface operations {
                     };
                 };
             };
+            /**
+             * @description Trop de requêtes. Quota : 5 tentatives par quart d'heure et par compte visé, depuis une même adresse IP ; un plafond distinct s'applique à l'adresse IP seule et au compte seul, toutes adresses confondues.
+             *
+             *     L'en-tête `Retry-After` donne le délai d'attente EN SECONDES ; il est toujours présent.
+             */
+            429: {
+                headers: {
+                    /** @description Délai avant nouvelle tentative, en secondes. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 429 */
+                        code: number;
+                        /** @example Trop de tentatives de connexion. Réessayez dans 15 minutes. */
+                        message: string;
+                    };
+                };
+            };
         };
     };
     api_mangas_get_collection: {
@@ -5372,6 +5547,146 @@ export interface operations {
                     "application/ld+json": components["schemas"]["ConstraintViolation.jsonld"];
                     "application/problem+json": components["schemas"]["ConstraintViolation"];
                     "application/json": components["schemas"]["ConstraintViolation"];
+                };
+            };
+        };
+    };
+    api_passwordforgot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The new PasswordForgot resource */
+        requestBody: {
+            content: {
+                "application/ld+json": components["schemas"]["PasswordForgot-password.forgot"];
+                "application/json": components["schemas"]["PasswordForgot-password.forgot"];
+            };
+        };
+        responses: {
+            /** @description PasswordForgot resource created */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description An error occurred */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["ConstraintViolation.jsonld"];
+                    "application/problem+json": components["schemas"]["ConstraintViolation"];
+                    "application/json": components["schemas"]["ConstraintViolation"];
+                };
+            };
+            /**
+             * @description Trop de requêtes. Quota : 5 demandes par heure et par adresse IP. Une limite distincte, par adresse e-mail visée, coupe l'envoi du message sans changer le statut de la réponse.
+             *
+             *     L'en-tête `Retry-After` donne le délai d'attente EN SECONDES ; il est toujours présent.
+             */
+            429: {
+                headers: {
+                    /** @description Délai avant nouvelle tentative, en secondes. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** @example https://tools.ietf.org/html/rfc6585#section-4 */
+                        type?: string;
+                        /** @example An error occurred */
+                        title?: string;
+                        /** @example 429 */
+                        status?: number;
+                        /** @example Trop de comptes créés depuis cette adresse. Réessayez plus tard. */
+                        detail?: string;
+                    };
+                };
+            };
+        };
+    };
+    api_passwordreset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The new PasswordReset resource */
+        requestBody: {
+            content: {
+                "application/ld+json": components["schemas"]["PasswordReset-password.reset"];
+                "application/json": components["schemas"]["PasswordReset-password.reset"];
+            };
+        };
+        responses: {
+            /** @description PasswordReset resource created */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description An error occurred */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["ConstraintViolation.jsonld"];
+                    "application/problem+json": components["schemas"]["ConstraintViolation"];
+                    "application/json": components["schemas"]["ConstraintViolation"];
+                };
+            };
+            /**
+             * @description Trop de requêtes. Quota : 5 tentatives par heure et par adresse IP.
+             *
+             *     L'en-tête `Retry-After` donne le délai d'attente EN SECONDES ; il est toujours présent.
+             */
+            429: {
+                headers: {
+                    /** @description Délai avant nouvelle tentative, en secondes. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** @example https://tools.ietf.org/html/rfc6585#section-4 */
+                        type?: string;
+                        /** @example An error occurred */
+                        title?: string;
+                        /** @example 429 */
+                        status?: number;
+                        /** @example Trop de comptes créés depuis cette adresse. Réessayez plus tard. */
+                        detail?: string;
+                    };
                 };
             };
         };
@@ -6100,6 +6415,30 @@ export interface operations {
                     "application/json": components["schemas"]["ConstraintViolation"];
                 };
             };
+            /**
+             * @description Trop de requêtes. Quota : 3 comptes par heure et par adresse IP. Le quota est PARTAGÉ avec `POST /api/users`, son alias déprécié.
+             *
+             *     L'en-tête `Retry-After` donne le délai d'attente EN SECONDES ; il est toujours présent.
+             */
+            429: {
+                headers: {
+                    /** @description Délai avant nouvelle tentative, en secondes. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** @example https://tools.ietf.org/html/rfc6585#section-4 */
+                        type?: string;
+                        /** @example An error occurred */
+                        title?: string;
+                        /** @example 429 */
+                        status?: number;
+                        /** @example Trop de comptes créés depuis cette adresse. Réessayez plus tard. */
+                        detail?: string;
+                    };
+                };
+            };
         };
     };
     api_users_get_collection: {
@@ -6191,6 +6530,30 @@ export interface operations {
                     "application/ld+json": components["schemas"]["ConstraintViolation.jsonld"];
                     "application/problem+json": components["schemas"]["ConstraintViolation"];
                     "application/json": components["schemas"]["ConstraintViolation"];
+                };
+            };
+            /**
+             * @description Trop de requêtes. Quota : 3 comptes par heure et par adresse IP. Quota partagé avec `POST /api/register`.
+             *
+             *     L'en-tête `Retry-After` donne le délai d'attente EN SECONDES ; il est toujours présent.
+             */
+            429: {
+                headers: {
+                    /** @description Délai avant nouvelle tentative, en secondes. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** @example https://tools.ietf.org/html/rfc6585#section-4 */
+                        type?: string;
+                        /** @example An error occurred */
+                        title?: string;
+                        /** @example 429 */
+                        status?: number;
+                        /** @example Trop de comptes créés depuis cette adresse. Réessayez plus tard. */
+                        detail?: string;
+                    };
                 };
             };
         };
