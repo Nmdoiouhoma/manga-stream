@@ -535,6 +535,71 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
+      # =====================================================================
+      # L'IMAGE DE PRODUCTION DOIT SATISFAIRE LE CONTRAT D'API AU DÉMARRAGE
+      #
+      # Le bug le plus coûteux de ce projet : après chaque recréation du
+      # conteneur backend en production, /api/register, /api/me,
+      # /api/password/* et /api/mercure/subscription répondaient 404 et le
+      # filtre custom `?title=` était ignoré, pendant que le catalogue et les
+      # filtres natifs fonctionnaient. Panne PARTIELLE et SILENCIEUSE : rien
+      # dans les logs, la supervision au vert, et on cherche côté frontend.
+      #
+      # Deux causes, toutes deux liées au cache Symfony (voir
+      # infra/backend/Dockerfile.dockerignore et l'entrypoint) — mais peu
+      # importe la cause ici : ce qu'on veut, c'est que la question soit posée
+      # À CHAQUE COMMIT, sur l'image réellement produite, et pas découverte
+      # sur le serveur après un reboot AWS.
+      #
+      # `check` est une pseudo-commande de l'entrypoint : elle reconstruit le
+      # cache, vérifie que les routes critiques sont dans le routeur et que le
+      # filtre custom est dans le conteneur compilé, puis sort. Elle n'a
+      # besoin NI de base de données NI du reste de la stack.
+      #
+      # Cette étape échoue aussi si le backend renomme ou supprime une de ces
+      # routes sans mettre à jour REQUIRED_ROUTES : c'est voulu. Le contrat
+      # doit être modifié sciemment, pas dérivé en silence.
+      # =====================================================================
+      - name: Construire l'image backend de production
+        if: needs.detect.outputs.backend == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./infra/backend/Dockerfile
+          target: prod
+          build-contexts: infra=./infra
+          push: false
+          load: true
+          tags: manga-stream-backend:prod
+          cache-from: type=gha,scope=backend-prod
+          cache-to: type=gha,mode=max,scope=backend-prod
+
+      - name: "L'image de production ne doit embarquer aucun artefact de l'hôte"
+        if: needs.detect.outputs.backend == 'true'
+        run: |
+          set -euo pipefail
+          status=0
+
+          # Ces chemins provenaient de l'arbre de travail du développeur via le
+          # `COPY . .` du stage prod, faute de .dockerignore. var/cache/ figeait
+          # un routeur périmé ; config/jwt/ embarquait des clés privées.
+          for path in var/cache/prod .env.local config/jwt/private.pem vendor/phpunit tests; do
+            if docker run --rm --entrypoint sh manga-stream-backend:prod \
+                 -c "[ -e '$path' ]" 2>/dev/null; then
+              echo "::error title=Artefact de l-hote dans l-image::$path ne doit pas exister dans manga-stream-backend:prod"
+              status=1
+            else
+              echo "absent (bon signe) : $path"
+            fi
+          done
+          exit $status
+
+      - name: "L'image de production satisfait le contrat de démarrage"
+        if: needs.detect.outputs.backend == 'true'
+        run: |
+          set -euo pipefail
+          docker run --rm -e APP_ENV=prod manga-stream-backend:prod check
+
       - name: Build the frontend image (dev + prod stages)
         if: needs.detect.outputs.frontend == 'true'
         uses: docker/build-push-action@v6
