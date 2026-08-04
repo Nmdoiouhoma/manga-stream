@@ -67,6 +67,185 @@ generate_jwt_keys() {
 }
 
 # ---------------------------------------------------------------------------
+# CACHE SYMFONY — reconstruit au démarrage, jamais hérité de l'image
+#
+# LE BUG QUE CETTE FONCTION CORRIGE
+#
+#   En production (APP_DEBUG=0), Symfony ne vérifie PAS la fraîcheur du
+#   conteneur compilé : s'il trouve var/cache/prod/, il le charge tel quel.
+#   Un cache périmé ou incomplet ne provoque donc aucune erreur — l'application
+#   démarre, sert le catalogue, et se contente d'ignorer tout ce qui a été
+#   ajouté après la génération de ce cache. Concrètement, sur ce projet :
+#   /api/register, /api/me, /api/password/forgot, /api/password/reset et
+#   /api/mercure/subscription répondaient 404, /api/login retombait sur le
+#   handler SPA de Caddy, et le filtre custom `?title=` était ignoré (250
+#   résultats au lieu de 3) — pendant que les filtres natifs fonctionnaient.
+#   Une panne partielle, silencieuse, qui ressemble à un problème de front.
+#
+#   Deux chemins y menaient, indépendants l'un de l'autre :
+#     a) le cache de la machine de build recopié dans l'image (corrigé par
+#        infra/backend/Dockerfile.dockerignore) ;
+#     b) un cache VIDE rempli paresseusement à la première requête, par
+#        plusieurs enfants php-fpm en concurrence — le cas du serveur AWS,
+#        qui construit depuis un clone git propre.
+#
+# CE QU'ON FAIT ICI, ET POURQUOI DANS CET ORDRE
+#
+#   `rm -rf` PUIS `cache:warmup`, et pas `cache:clear` : `cache:clear` doit
+#   d'abord démarrer le noyau, donc CHARGER le cache qu'on soupçonne d'être
+#   cassé. Sur un cache réellement corrompu il échoue (constaté : « no
+#   extension able to load the configuration for lexik_jwt_authentication »,
+#   parce que la liste de bundles mise en cache datait d'avant l'installation
+#   du bundle). Supprimer le répertoire ne dépend, lui, de rien.
+#
+#   Le warmup a lieu AVANT que php-fpm ne soit exec'é, donc avant la première
+#   requête : un seul processus construit le cache, il n'y a pas de course.
+#
+# COÛT : quelques secondes au démarrage du conteneur (mesuré ~4 s sur une
+# t3.micro). Assumé — voir la note en fin de infra/backend/Dockerfile.
+#
+# WARMUP_CACHE=auto (défaut) -> uniquement si APP_ENV=prod
+#              =1            -> toujours
+#              =0            -> jamais (débogage, ou warmup fait autrement)
+# ---------------------------------------------------------------------------
+warm_cache() {
+    local mode="${WARMUP_CACHE:-auto}"
+    local env_name="${APP_ENV:-prod}"
+
+    [ "$mode" = "0" ] && return 0
+    [ -f bin/console ] || return 0
+    if [ "$mode" = "auto" ] && [ "$env_name" != "prod" ]; then
+        # En dev le code est bind-monté et APP_DEBUG=1 : Symfony invalide son
+        # cache tout seul dès qu'un fichier change. Un warmup ici ne ferait
+        # qu'allonger chaque `docker compose up` sans rien garantir de plus.
+        return 0
+    fi
+
+    log "cache: purge de var/cache/${env_name} puis warmup (APP_ENV=${env_name})"
+    rm -rf "var/cache/${env_name}" 2>/dev/null || true
+
+    if php bin/console cache:warmup --no-interaction --no-ansi; then
+        log "cache: warmup terminé"
+        return 0
+    fi
+
+    log "cache: ÉCHEC du warmup"
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# CONTRAT DE DÉMARRAGE — le garde-fou bruyant
+#
+# Un conteneur qui refuse de démarrer se voit tout de suite. Une application
+# qui démarre en ayant silencieusement perdu l'inscription et la connexion,
+# non : le catalogue répond, la page s'affiche, la supervision est au vert, et
+# on cherche du côté du frontend. C'est exactement ce qui s'est produit trois
+# fois ici. Ce contrôle transforme donc la panne partielle silencieuse en
+# refus de démarrage explicite.
+#
+# On vérifie que les routes CRITIQUES et NON TRIVIALES sont bien dans le
+# routeur. « Non triviales » au sens : déclarées ailleurs que par une entité
+# Doctrine — src/ApiResource/, contrôleurs custom, security.yaml — donc
+# précisément celles qu'un cache incomplet perd en premier. Inutile de lister
+# /api/animes : le jour où le cache est cassé, elle répond quand même.
+#
+# Réglages :
+#   STARTUP_CONTRACT_CHECK=0   désactive le contrôle (soupape de secours ; si
+#                              vous l'utilisez en production, ouvrez un ticket
+#                              dans la foulée : le contrat est faux ou le
+#                              cache l'est)
+#   REQUIRED_ROUTES="..."      remplace la liste (chemins séparés par des
+#                              espaces). À tenir à jour avec le backend.
+# ---------------------------------------------------------------------------
+REQUIRED_ROUTES_DEFAULT="/api/register /api/me /api/login /api/password/forgot /api/password/reset /api/mercure/subscription"
+
+# Classes dont la présence dans le conteneur compilé est vérifiée en plus des
+# routes. Un filtre custom ne crée aucune route : quand API Platform perd ses
+# métadonnées, `?title=naruto` renvoie tout le catalogue au lieu de filtrer —
+# silencieux, et faux.
+REQUIRED_CLASSES_DEFAULT="App\\Filter\\CombinedTitleFilter"
+
+assert_startup_contract() {
+    [ "${STARTUP_CONTRACT_CHECK:-1}" = "0" ] && return 0
+    [ -f bin/console ] || return 0
+
+    local env_name="${APP_ENV:-prod}"
+    local required="${REQUIRED_ROUTES:-$REQUIRED_ROUTES_DEFAULT}"
+    local classes="${REQUIRED_CLASSES:-$REQUIRED_CLASSES_DEFAULT}"
+    local declared missing="" path class short
+
+    declared=$(php bin/console debug:router --no-ansi 2>/dev/null \
+        | awk 'NF > 1 { print $NF }' \
+        | sed -e 's/{\._format}$//' -e 's/\.{_format}$//')
+
+    if [ -z "$declared" ]; then
+        contract_failure "le routeur est vide ou 'debug:router' a échoué"
+        return 1
+    fi
+
+    for path in $required; do
+        printf '%s\n' "$declared" | grep -qxF "$path" || missing="${missing} ${path}"
+    done
+
+    if [ -n "$missing" ]; then
+        contract_failure "routes absentes du routeur :${missing}"
+        return 1
+    fi
+
+    # Le conteneur compilé référence les classes avec des antislashs échappés
+    # ou non selon le contexte ; on cherche donc le nom court, suffisant pour
+    # lever le doute et sans coût (grep sur var/cache, pas de recompilation).
+    for class in $classes; do
+        short="${class##*\\}"
+        if ! grep -rqlF "$short" "var/cache/${env_name}" 2>/dev/null; then
+            missing="${missing} ${class}"
+        fi
+    done
+
+    if [ -n "$missing" ]; then
+        contract_failure "classes absentes du conteneur compilé :${missing}"
+        return 1
+    fi
+
+    log "contrat de démarrage vérifié : $(printf '%s\n' "$declared" | grep -c . ) routes, dont toutes les routes critiques"
+    return 0
+}
+
+contract_failure() {
+    cat >&2 <<EOF
+
+################################################################################
+# DÉMARRAGE REFUSÉ — le contrat d'API n'est pas satisfait
+#
+# $1
+#
+# L'application aurait démarré en apparence NORMALE : le catalogue répond, la
+# page s'affiche, et seules l'inscription et la connexion tombent — en 404 côté
+# API, donc en HTML de la SPA côté navigateur. On préfère un conteneur qui
+# refuse de démarrer.
+#
+# Cause la plus probable : le cache Symfony ne correspond pas au code déployé.
+#
+# QUE FAIRE
+#   1. Reconstruire l'image sans cache :
+#        docker compose -f docker-compose.yml -f docker-compose.prod.yml \\
+#          build --no-cache backend
+#   2. Vérifier que l'image n'embarque pas d'artefacts de l'hôte (ces trois
+#      commandes doivent toutes renvoyer « vide » ou une erreur « No such
+#      file ») :
+#        docker run --rm --entrypoint sh manga-stream-backend:prod -c \\
+#          'ls var/cache; ls .env.local; ls config/jwt'
+#   3. Si les routes attendues ont légitimement changé côté backend, mettre à
+#      jour REQUIRED_ROUTES (voir infra/backend/docker-entrypoint.sh) plutôt
+#      que de désactiver le contrôle.
+#
+# Soupape de secours, en connaissance de cause : STARTUP_CONTRACT_CHECK=0
+################################################################################
+
+EOF
+}
+
+# ---------------------------------------------------------------------------
 # Messenger worker
 #
 # `messenger:consume` is a long-running process that is EXPECTED to exit: the
@@ -206,6 +385,19 @@ if [ "${1#-}" != "$1" ]; then
     set -- php-fpm "$@"
 fi
 
+# `check` : pseudo-commande sans service. Reconstruit le cache et vérifie le
+# contrat, puis sort. C'est ce que joue l'intégration continue sur l'image de
+# production fraîchement construite — ainsi la régression du cache incomplet ne
+# peut plus atteindre le serveur sans avoir d'abord fait rougir la CI :
+#
+#   docker run --rm -e APP_ENV=prod manga-stream-backend:prod check
+if [ "$1" = "check" ]; then
+    warm_cache || exit 1
+    assert_startup_contract || exit 1
+    log "check: l'image satisfait le contrat de démarrage"
+    exit 0
+fi
+
 if [ "$1" = "php-fpm" ] || [ "$1" = "php" ] || [ "$1" = "composer" ] || [ "$1" = "worker" ]; then
 
     if [ -f composer.json ] && [ ! -f vendor/autoload_runtime.php ]; then
@@ -233,6 +425,27 @@ if [ "$1" = "php-fpm" ] || [ "$1" = "php" ] || [ "$1" = "composer" ] || [ "$1" =
     # race and could leave a private/public pair that does not match.
     if [ "$1" != "worker" ]; then
         generate_jwt_keys
+    fi
+
+    # Cache reconstruit AVANT tout le reste de ce bloc qui touche au noyau
+    # Symfony (migrations ci-dessous) et, surtout, avant le `exec` final : au
+    # moment où php-fpm accepte sa première requête, le cache est complet et
+    # correspond au code réellement présent. Voir warm_cache() plus haut.
+    #
+    # Un échec est FATAL et non silencieux : démarrer sans cache valide, c'est
+    # exactement la panne partielle qu'on cherche à éliminer.
+    if ! warm_cache; then
+        echo "[entrypoint] le warmup du cache a échoué -> arrêt" >&2
+        exit 1
+    fi
+
+    # Le contrat ne concerne que le rôle HTTP : c'est là que l'absence d'une
+    # route se traduit par un 404 muet pour l'utilisateur. Un worker ou une
+    # commande ponctuelle n'ont pas à refuser de démarrer pour ça.
+    if [ "$1" = "php-fpm" ]; then
+        if ! assert_startup_contract; then
+            exit 1
+        fi
     fi
 
     # Opt-in schema migration. Disabled by default (RUN_MIGRATIONS=0) so that

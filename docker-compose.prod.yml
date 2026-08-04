@@ -134,12 +134,16 @@ services:
       # Les migrations restent manuelles : un redéploiement ne doit jamais
       # modifier un schéma sans qu'on l'ait décidé.
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
-    # `!reset` VIDE la liste heritee du fichier de dev au lieu de s'y ajouter
-    # (les listes se CUMULENT entre fichiers compose, c'est la regle par
-    # defaut). Sans lui, le bind-mount ./backend du dev recouvrirait le code
-    # embarque dans l'image prod : on deploierait l'arbre de fichiers du
-    # serveur, pas l'image construite et testee.
-    volumes: !reset []
+    # `!override` REMPLACE la liste heritee du fichier de dev au lieu de s'y
+    # ajouter (les listes se CUMULENT entre fichiers compose, c'est la regle
+    # par defaut). Il FAUT la remplacer : le bind-mount ./backend du dev
+    # recouvrirait sinon le code embarque dans l'image prod, et on deploierait
+    # l'arbre de fichiers du serveur au lieu de l'image construite et testee.
+    #
+    # Seul `jwt_keys` subsiste, et il n'est pas optionnel — voir la note du
+    # bloc `volumes:` en bas de fichier.
+    volumes: !override
+      - jwt_keys:/var/www/html/config/jwt
     logging: *prod-logging
 
   worker:
@@ -156,7 +160,11 @@ services:
       DEFAULT_URI: https://${PUBLIC_DOMAIN}
       MAILER_DSN: ${MAILER_DSN:?MAILER_DSN obligatoire en production}
       SYMFONY_TRUSTED_PROXIES: ${SYMFONY_TRUSTED_PROXIES:-${DOCKER_SUBNET:-172.21.0.0/16}}
-    volumes: !reset []
+    # Le worker VÉRIFIE les jetons qu'il reçoit (notifications, mails liés à un
+    # compte) : il lui faut la MÊME paire de clés que le backend, pas une paire
+    # generee dans son coin. D'ou le volume partage.
+    volumes: !override
+      - jwt_keys:/var/www/html/config/jwt
     logging: *prod-logging
 
   cron:
@@ -181,6 +189,7 @@ services:
       - ./infra/cron/anilist-sync-status:/usr/local/bin/anilist-sync-status:ro
       - ./infra/cron/anilist-sync-now:/usr/local/bin/anilist-sync-now:ro
       - anilist_sync_state:/state
+      - jwt_keys:/var/www/html/config/jwt
     logging: *prod-logging
 
   # -------------------------------------------------------------------------
@@ -313,3 +322,34 @@ volumes:
   caddy_data:
   caddy_config:
   caddy_logs:
+
+  # -------------------------------------------------------------------------
+  # Clés JWT — pourquoi un volume, et pourquoi c'est indispensable
+  #
+  # La paire RSA de lexik/jwt-authentication-bundle est générée par
+  # infra/backend/docker-entrypoint.sh au premier démarrage, et CHIFFRÉE avec
+  # JWT_PASSPHRASE. Sans volume, elle vit dans le système de fichiers du
+  # conteneur : chaque `up --force-recreate` repartait donc de l'image, avec
+  # deux conséquences selon les cas.
+  #
+  #   * Si l'image en embarquait une (c'était le cas avant que
+  #     infra/backend/Dockerfile.dockerignore n'exclue config/jwt/) : la clé du
+  #     poste du développeur, chiffrée avec SA phrase secrète et pas celle de
+  #     .env.prod. L'entrypoint voyait les fichiers présents et n'en
+  #     régénérait pas.
+  #   * Sinon : une NOUVELLE paire à chaque recréation, donc tous les jetons
+  #     déjà émis invalidés — tous les utilisateurs déconnectés à chaud.
+  #
+  # Le symptôme du premier cas est particulièrement trompeur : l'inscription
+  # et le catalogue fonctionnent, SEULE la connexion tombe, en 500 « unable to
+  # encode the JWT token » — un message qui ne désigne pas la cause.
+  #
+  # Ce volume est déjà en place dans docker-compose.tunnel.yml (commit
+  # 95ac5a1). Il est repris ici parce que le serveur AWS ne joue PAS la
+  # surcouche tunnel : il tombait donc exactement dans le même piège.
+  #
+  # SI VOUS DEVEZ RÉVOQUER LES CLÉS : `docker compose down` puis
+  # `docker volume rm manga-stream_jwt_keys`. Tout le monde est déconnecté,
+  # ce qui est le comportement attendu d'une révocation.
+  # -------------------------------------------------------------------------
+  jwt_keys:

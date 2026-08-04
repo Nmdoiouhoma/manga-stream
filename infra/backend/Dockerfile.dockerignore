@@ -1,0 +1,70 @@
+# ===========================================================================
+# manga-stream :: contexte de build du backend — exclusions
+#
+# POURQUOI CE FICHIER EST ICI ET PAS DANS backend/
+#
+# BuildKit cherche d'abord un fichier « <chemin-du-Dockerfile>.dockerignore »,
+# et ne retombe sur le .dockerignore de la racine du contexte que s'il n'en
+# trouve pas. Comme le Dockerfile du backend vit dans infra/, ses exclusions
+# vivent à côté de lui : toute la configuration de build reste dans infra/,
+# et backend/ n'a pas à héberger un fichier d'infrastructure.
+#
+# CE QUE CE FICHIER EMPÊCHE — ce n'est pas une optimisation, c'est un correctif
+#
+# Le stage `prod` fait `COPY . .` : SANS exclusions, il copie l'ARBRE DE
+# TRAVAIL DU DÉVELOPPEUR par-dessus l'image, et l'image partait en production
+# avec :
+#
+#   * var/cache/prod/ — le cache Symfony de la machine du développeur, figé au
+#     jour où il l'a généré. En prod APP_DEBUG=0 : Symfony NE VÉRIFIE PAS la
+#     fraîcheur du conteneur compilé, il le charge tel quel. Résultat observé :
+#     les ressources ajoutées après cette date (src/ApiResource/ → /api/register,
+#     /api/me, /api/password/*, /api/mercure/subscription) n'existaient pas dans
+#     le routeur — 404 — et le filtre custom `title` était ignoré, pendant que
+#     le catalogue répondait normalement. Panne PARTIELLE et SILENCIEUSE.
+#
+#   * config/jwt/*.pem — la paire de clés RSA du poste du développeur, gravée
+#     dans l'image. Chiffrée avec SA phrase secrète, pas celle de .env.prod :
+#     toute connexion échouait en 500 « unable to encode the JWT token ».
+#     Et, accessoirement, du matériel cryptographique privé embarqué dans une
+#     image applicative.
+#
+#   * .env.local — qui pointe DATABASE_URL sur 127.0.0.1.
+#
+#   * vendor/ — l'arbre complet du développeur, dépendances de développement
+#     incluses, écrasant le `composer install --no-dev` du layer précédent.
+#
+# Le stage `dev` n'est pas concerné (le code y est monté en bind-mount), mais
+# les exclusions s'appliquent aux deux : c'est sans effet sur lui.
+# ===========================================================================
+
+# --- artefacts de build et d'exécution -------------------------------------
+# Recréés dans l'image (composer install) ou au démarrage (entrypoint).
+vendor/
+var/
+public/bundles/
+
+# --- secrets et surcharges locales -----------------------------------------
+# Rien de tout cela ne doit entrer dans une image. Les clés JWT sont générées
+# par l'entrypoint et persistées dans le volume `jwt_keys`.
+.env.local
+.env.*.local
+config/jwt/
+config/secrets/
+
+# --- tests et outillage ----------------------------------------------------
+# Les tests tournent en CI sur la checkout, jamais depuis l'image de prod.
+tests/
+.phpunit.cache/
+phpunit.xml
+phpunit.dist.xml
+.php-cs-fixer.cache
+.phpstan.cache/
+
+# --- divers ----------------------------------------------------------------
+.git/
+.gitignore
+.editorconfig
+.idea/
+.vscode/
+*.log

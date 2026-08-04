@@ -82,6 +82,9 @@ ENV APP_ENV=dev \
 
 # ---------------------------------------------------------------------------
 # prod : source code + optimized autoloader baked into the image.
+#
+# Le cache Symfony n'est PAS construit ici, volontairement — voir la note
+# « POURQUOI PAS DE cache:warmup AU BUILD » en bas de fichier.
 # ---------------------------------------------------------------------------
 FROM base AS prod
 
@@ -92,7 +95,62 @@ COPY --chown=app:app composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --no-progress \
     && composer clear-cache
 
+# Ce `COPY .` est filtré par infra/backend/Dockerfile.dockerignore : sans lui,
+# il embarquerait var/cache/, vendor/, .env.local et config/jwt/*.pem de la
+# machine qui construit. Lire ce fichier avant de toucher à cette ligne.
 COPY --chown=app:app . .
 
-RUN composer dump-autoload --classmap-authoritative --no-dev \
-    && mkdir -p var/cache var/log
+# Ceinture ET bretelles. Le .dockerignore ci-dessus suffit AVEC BuildKit
+# (docker >= 23) ; un constructeur plus ancien, ou un `docker build` lancé
+# depuis un autre répertoire, l'ignorerait sans le moindre avertissement — et
+# l'image repartirait avec le cache périmé de l'hôte. Ces quelques secondes de
+# build achètent la garantie que l'image ne contient QUE ce qu'on y a mis :
+#
+#   * var/cache, var/log : reconstruits au démarrage par l'entrypoint ;
+#   * .env.local : surcharges de poste de développement ;
+#   * config/jwt : clés privées, générées au démarrage et persistées dans le
+#     volume `jwt_keys` ;
+#   * `composer install` rejoué : réinstalle exactement composer.lock SANS les
+#     dépendances de développement, donc désinstalle ce qu'un vendor/ d'hôte
+#     aurait pu apporter, et regénère un autoloader `classmap-authoritative`.
+RUN rm -rf var/cache var/log .env.local .env.*.local config/jwt \
+             tests .phpunit.cache phpunit.xml \
+    && composer install --no-dev --no-scripts --no-interaction --prefer-dist \
+             --no-progress --classmap-authoritative \
+    && composer clear-cache \
+    && mkdir -p var/cache var/log config/jwt
+
+# ---------------------------------------------------------------------------
+# POURQUOI PAS DE cache:warmup AU BUILD
+#
+# C'est la question qui a coûté le plus cher sur ce projet. Trois façons de
+# faire, une seule qui tient :
+#
+#   1. Cache hérité du contexte de build (l'état d'AVANT, par accident) :
+#      l'image partait avec le cache de la machine du développeur. En prod
+#      APP_DEBUG=0, Symfony ne vérifie PAS la fraîcheur du conteneur compilé —
+#      il le charge tel quel. Les routes de src/ApiResource/ ajoutées après la
+#      génération de ce cache répondaient 404 pendant que le catalogue
+#      fonctionnait : panne partielle, silencieuse, très coûteuse à diagnostiquer.
+#
+#   2. `cache:warmup` ici, au build : mieux, mais le cache produit reflète
+#      l'environnement du CONSTRUCTEUR, pas celui de l'exécution. Le même
+#      artefact sert aujourd'hui à docker-compose.prod.yml et à la surcouche
+#      tunnel, avec des DEFAULT_URI, MERCURE_URL et CORS différents. Et surtout
+#      ça ne protège de rien : il suffit qu'une couche ultérieure, un volume ou
+#      un bind-mount recouvre var/cache pour retomber sur le cas 1.
+#
+#   3. `cache:warmup` À L'ENTRYPOINT, après un `rm -rf var/cache/$APP_ENV`
+#      (choix retenu, voir infra/backend/docker-entrypoint.sh). C'est le seul
+#      endroit où le cache ne PEUT PAS être périmé : il est construit à partir
+#      du code réellement présent et des variables réellement injectées, par un
+#      processus unique, AVANT que php-fpm n'accepte la première requête.
+#      Ce dernier point compte autant que le reste : sans warmup explicite, un
+#      cache vide se remplit paresseusement à la première requête, et une
+#      rafale initiale fait compiler plusieurs enfants php-fpm en concurrence —
+#      c'est le second chemin, indépendant du premier, vers un cache incomplet.
+#
+# Coût mesuré du choix 3 sur une t3.micro (908 Mo) : quelques secondes ajoutées
+# au démarrage du conteneur, une seule fois. À comparer à une inscription et
+# une connexion muettes après le prochain reboot AWS.
+# ---------------------------------------------------------------------------
