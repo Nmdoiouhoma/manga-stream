@@ -62,6 +62,26 @@ x-backend-env: &backend-env
   # Set to 1 to run doctrine:migrations:migrate on container start.
   RUN_MIGRATIONS: ${RUN_MIGRATIONS:-0}
   # -------------------------------------------------------------------------
+  # Démarrage du backend : cache et contrat d'API
+  #
+  # Les valeurs par défaut sont les bonnes ; elles ne sont déclarées ici que
+  # pour être SURCHARGEABLES depuis .env — une variable documentée dans
+  # .env.example mais absente de ce bloc n'atteindrait jamais le conteneur, ce
+  # qui est pire que de ne pas l'avoir documentée du tout.
+  #
+  #   WARMUP_CACHE=auto  -> l'entrypoint purge var/cache/$APP_ENV et joue
+  #                         cache:warmup avant php-fpm, quand APP_ENV=prod.
+  #   STARTUP_CONTRACT_CHECK=1 -> le rôle HTTP refuse de démarrer si les routes
+  #                         critiques manquent du routeur.
+  #
+  # Le détail, et l'historique de la panne qui les justifie, sont dans
+  # infra/backend/docker-entrypoint.sh et dans .env.example.
+  # -------------------------------------------------------------------------
+  WARMUP_CACHE: ${WARMUP_CACHE:-auto}
+  STARTUP_CONTRACT_CHECK: ${STARTUP_CONTRACT_CHECK:-1}
+  REQUIRED_ROUTES: ${REQUIRED_ROUTES:-}
+  REQUIRED_CLASSES: ${REQUIRED_CLASSES:-}
+  # -------------------------------------------------------------------------
   # Envoi d'e-mails (symfony/mailer)
   #
   # En dev le DSN pointe sur Mailpit : rien ne sort de la machine, tout
