@@ -23,17 +23,56 @@ By default the app runs on **mocked data**: nothing else needs to be up.
 | `npm run dev`          | Dev server on `:5173` (MSW enabled by default)                 |
 | `npm run build`        | Typecheck (`tsc -b`) + production build → `dist/`              |
 | `npm run lint`         | `oxlint --max-warnings=0` — **fails on any warning** (CI gate) |
+| `npm test`             | Vitest, once (CI gate)                                         |
+| `npm run test:watch`   | Vitest in watch mode                                           |
+| `npm run test:coverage`| Vitest + V8 coverage                                           |
 | `npm run typecheck`    | Full non-incremental typecheck                                 |
 | `npm run generate:api` | Regenerates `src/api/schema.ts` from `../docs/openapi.yaml`    |
 | `npm run preview`      | Serves the production build locally                            |
 
-CI should run `npm ci && npm run lint && npm run build`. Both gates are green.
+CI should run `npm ci && npm run lint && npm test && npm run build`. All three
+gates are green.
+
+### What is tested, and why those things
+
+There is no coverage target: a percentage would be met by testing getters. The
+suite covers the four places where a mistake is both easy to make and expensive
+to notice.
+
+| Fichier                       | Ce qui est ancré                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `api/baseUrl.test.ts`         | Le double `/api` — le contrat préfixe déjà ses routes, le docker-compose partagé aussi |
+| `api/comments.test.ts`        | `buildThread` : fil à deux niveaux, réponse orpheline promue en racine plutôt que perdue |
+| `lib/progression.test.ts`     | Normalisation `COMPLETED`, total inconnu, décimaux `decimal(8,2)` en string        |
+| `components/UnitList.test.tsx`| L'épisode nu : 59 % des 4 392 épisodes en base n'ont qu'un numéro                  |
+| `pages/ListPage.test.tsx`     | « Ma liste » : onglets, tri, `+1`, relecture de la réponse serveur, rollback sur 422 |
+
+`src/test/http.ts` remplace `globalThis.fetch` **depuis `setupFiles`**, et non
+via un `vi.spyOn` dans le corps d'un test : `openapi-fetch` capture la fonction
+à la création du client (`fetch: baseFetch = globalThis.fetch`), donc un espion
+posé plus tard n'intercepte rien et la requête part pour de vrai. Par défaut
+toute requête non simulée **lève** — un test qui oublie un mock casse au lieu
+de dépendre du réseau.
 
 ## Mocks (MSW)
 
 The frontend is decoupled from the backend by [MSW](https://mswjs.io). The service
 worker (`public/mockServiceWorker.js`) intercepts `/api/*` in the browser and
 answers with the fixtures in `src/mocks/data.ts`.
+
+**Le worker n'est jamais publié.** `public/mockServiceWorker.js` était copié
+dans `dist/` et donc **servi en production** (200 `application/javascript`,
+constaté sur l'instance déployée). Un plugin de `vite.config.ts` le retire
+maintenant du bundle : tant que ce script répond 200, un Service Worker installé
+du temps de `VITE_USE_MOCKS=true` reste installé, alors qu'un 404 pousse le
+navigateur à le désinstaller.
+
+**Et les workers déjà installés sont purgés.** Retirer le fichier du build ne
+désinstalle rien de ce qui existe déjà. Au démarrage, mocks éteints,
+`main.tsx` désenregistre tout Service Worker dont le script est
+`mockServiceWorker.js`, puis recharge **une fois** la page si elle était
+contrôlée — `unregister()` seul laisse la page courante sous le contrôle du
+worker jusqu'à sa prochaine navigation.
 
 Controlled by two env vars (see `.env.example`):
 
@@ -258,6 +297,36 @@ which are not equivalent:
 
 The cookie is cleared on logout and on session expiry — it is a bearer token.
 
+### Le fil de commentaires suit la cloche
+
+Être prévenu d'une réponse qu'on ne voit pas est absurde : la cloche
+s'incrémentait pendant que le fil restait figé jusqu'au rechargement. Un
+événement `COMMENT_REPLY` invalide donc aussi `['comments']`. Le préfixe seul,
+sans l'œuvre : le payload porte le commentaire et son parent, **jamais** l'IRI
+du média — cibler précisément demanderait de l'ajouter côté backend. Le coût
+est nul, React Query ne refetchant que les requêtes *actives*.
+
+### Publier un commentaire : ce qui a été trouvé, et ce qui ne l'a pas été
+
+Symptôme rapporté (tâche #22) : un commentaire racine n'apparaissait qu'après
+rechargement.
+
+Ce qui a été **vérifié contre l'API déployée** : `POST /api/comments` répond
+201 avec le corps complet, et la requête *exacte* du front
+(`?anime=…&itemsPerPage=100&order[createdAt]=desc`) le voit immédiatement. Le
+chemin serveur est sain ; la cause est côté navigateur.
+
+Ce qui a été **corrigé** : `useAddComment` fait désormais une mise à jour
+optimiste avec rollback, comme `useDeleteComment` en avait déjà une. Le
+commentaire est à l'écran au clic, quelle que soit la cause du symptôme.
+
+Ce qui **n'est pas** la cause, contrairement à l'hypothèse de départ : le
+Service Worker MSW fantôme. Son code passe les requêtes en `passthrough` tant
+qu'aucun client ne s'est annoncé (`if (activeClientIds.size === 0) return`), et
+aucun client ne s'annonce mocks éteints. Il est purgé quand même — c'est de
+l'hygiène, et publier un worker de mock en production n'a aucune justification
+— mais il n'explique pas le symptôme. La cause exacte reste **non établie**.
+
 ### Verified, not assumed
 
 Phase 2 only proved the transport with a self-forged token. This was checked against
@@ -295,6 +364,9 @@ src/
     RecommendationCard.tsx
   hooks/
     useDebouncedValue.ts · useMercure.ts · useNotificationStream.ts
+  lib/
+    externalUrl.ts · retryAfter.ts
+    progression.ts # règles de progression, sans React donc testables directement
   mocks/
     data.ts        # catalogue fixtures, typed against the contract
     db.ts          # mutable store: users, favourites, progress, comments, notifications
@@ -302,7 +374,11 @@ src/
     browser.ts     # worker bootstrap (dev only)
   pages/
     CatalogPage · MediaDetailPage · LoginPage · RegisterPage
+    ListPage       # « Ma liste » : onglets par statut, +1, tri, édition rapide
     FavoritesPage · RecommendationsPage · ProfilePage · NotFoundPage
+  test/
+    setup.ts       # matchers jest-dom, garde réseau, cleanup entre tests
+    http.ts        # remplacement de `fetch`, installé avant tout import applicatif
   types/media.ts   # domain types derived from the generated schema
   config.ts        # env-driven runtime config
 ```
@@ -316,10 +392,15 @@ src/
 | `/manga/:id`  | Detail sheet: same, with chapters                               |
 | `/login`      | public                                                          |
 | `/register`   | public                                                          |
+| `/list`       | **protected** — « Ma liste » : onglets par statut, `+1` en accès direct |
 | `/favorites`  | **protected** (`RequireAuth`)                                   |
 | `/recommendations` | **protected** — suggestions ranked by score, with the reason spelled out |
 | `/profile`    | **protected** (`RequireAuth`)                                   |
 | `*`           | 404                                                             |
+
+`/list` garde son état dans l'URL (`?statut=WATCHING&type=anime&tri=title`),
+comme le catalogue : un onglet est partageable et le retour arrière du
+navigateur fait ce qu'on attend après un clic d'onglet.
 
 Genre chips on a detail sheet link back to `/?genre=<slug>`; the catalogue reads
 its filters from the URL, so no shared store is involved and the link is shareable.
