@@ -91,6 +91,14 @@ FROM base AS prod
 ENV APP_ENV=prod \
     APP_DEBUG=0
 
+# Surcharges dimensionnées pour la t3.micro à 908 Mo. Préfixe `zzz-` : elles
+# sont lues APRÈS les `zz-` du stage `base`, donc elles gagnent. Le stage `dev`
+# ne les reçoit pas et garde des réglages confortables.
+USER root
+COPY --from=infra backend/php/php-prod.ini      /usr/local/etc/php/conf.d/zzz-manga-stream-prod.ini
+COPY --from=infra backend/php/php-fpm-prod.conf /usr/local/etc/php-fpm.d/zzz-manga-stream-prod.conf
+USER app
+
 COPY --chown=app:app composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --no-progress \
     && composer clear-cache

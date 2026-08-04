@@ -31,6 +31,44 @@
 #   7. Journalisation bornée : sans `logging`, les logs JSON de Docker
 #      grossissent sans limite jusqu'à remplir le disque du VPS. C'est une
 #      panne classique, silencieuse, et qui arrive vers le sixième mois.
+#   8. Plafonds mémoire par service (voir le budget ci-dessous).
+#
+# ---------------------------------------------------------------------------
+# BUDGET MÉMOIRE — la machine cible a 908 Mo, pas un octet de plus
+#
+# Mesuré au repos sur la production (t3.micro, Stockholm) : 538 Mo utilisés,
+# 370 Mo disponibles, 4 Go de swap sur EBS dont 149 Mo déjà consommés.
+#
+#   backend (php-fpm)  91 Mo   master 20 Mo + 5 enfants a ~50 Mo
+#   database           52 Mo
+#   caddy              40 Mo
+#   worker             40 Mo
+#   mercure            17 Mo
+#   cron                8 Mo
+#   frontend            7 Mo
+#   nginx               2 Mo
+#   backup              1 Mo
+#
+# CE QUI CASSE EN PREMIER SI LA CHARGE MONTE : le pool php-fpm. C'est le seul
+# service qui grandit avec le trafic, ~50 Mo par requête simultanée. Il est
+# désormais borné à 6 enfants (voir infra/backend/php/php-fpm-prod.conf) ; sans
+# ce plafond, 20 requêtes simultanées réclamaient 1 Go et poussaient la machine
+# en swap. Le swap étant sur EBS, chaque défaut de page devient un aller-retour
+# réseau : la machine ne « ralentit » pas, elle s'arrête d'avancer. Et le tueur
+# OOM du noyau choisit alors le plus gros processus, qui est PostgreSQL. On
+# perdrait la base à cause d'une rafale HTTP.
+#
+# À QUOI SERVENT LES `deploy.resources.limits` CI-DESSOUS : PAS à réserver de
+# la mémoire — ce sont des PLAFONDS, et leur somme dépasse volontairement les
+# 908 Mo puisque aucun service n'atteint le sien en régime normal. Ils servent
+# à garantir qu'un service qui dérape est tué SEUL, au lieu d'emporter la
+# machine et, avec elle, la base de données. Le rôle qu'on préfère voir tomber
+# est le backend HTTP : il redémarre en quelques secondes et ne perd rien.
+#
+# Compose applique bien `deploy.resources.limits` hors Swarm (v2) ; le
+# vérifier après déploiement :
+#   docker inspect manga-stream-backend --format '{{.HostConfig.Memory}}'
+# ---------------------------------------------------------------------------
 #
 # CE QU'ELLE NE CHANGE PAS, volontairement :
 #   * les noms de services, de conteneurs et de VOLUMES. Renommer quoi que ce
@@ -77,6 +115,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     logging: &prod-logging
       driver: json-file
       options:
@@ -94,6 +136,52 @@ services:
     # Ne jamais taper `-v` sur ce serveur.
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?mot de passe PostgreSQL obligatoire en production}
+    # -----------------------------------------------------------------------
+    # Réglage pour 908 Mo — les valeurs par défaut de l'image supposent une
+    # machine dédiée, ce qui n'est pas le cas ici.
+    #
+    #   effective_cache_size : 4 Go par défaut. Ce n'est pas une allocation,
+    #     c'est ce que le PLANIFICATEUR croit disponible en cache système. Sur
+    #     une machine qui a 908 Mo au total, lui faire croire à 4 Go le pousse
+    #     à choisir des parcours d'index qui supposent des pages déjà chaudes ;
+    #     elles ne le sont pas, et chaque lecture part sur EBS. C'est le pire
+    #     réglage du lot, et le moins visible.
+    #
+    #   max_connections : 100 par défaut, 7 réellement ouvertes. Chaque
+    #     connexion réserve son work_mem au moment d'un tri : 100 x 4 Mo, c'est
+    #     400 Mo que la machine n'a pas. 40 laisse une marge confortable
+    #     au-dessus du besoin réel (6 enfants php-fpm + worker + cron + backup).
+    #
+    #   parallélisme : désactivé. Deux vCPU et 908 Mo, sur des tables de
+    #     quelques milliers de lignes : chaque worker parallèle coûte de la
+    #     mémoire pour un gain nul à cette échelle.
+    #
+    # Ces valeurs ne sont PAS un réglage de performance, c'est un réglage de
+    # survie. Sur une machine plus grande, remonter effective_cache_size et
+    # shared_buffers en premier.
+    # -----------------------------------------------------------------------
+    command:
+      - postgres
+      - -c
+      - max_connections=40
+      - -c
+      - shared_buffers=96MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_worker_processes=2
+      - -c
+      - max_parallel_workers=2
+      - -c
+      - max_parallel_workers_per_gather=0
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     logging: *prod-logging
 
   # -------------------------------------------------------------------------
@@ -144,6 +232,11 @@ services:
     # bloc `volumes:` en bas de fichier.
     volumes: !override
       - jwt_keys:/var/www/html/config/jwt
+    # Le seul service qui grandit avec le trafic. 6 enfants x ~50 Mo + master.
+    deploy:
+      resources:
+        limits:
+          memory: 448M
     logging: *prod-logging
 
   worker:
@@ -165,6 +258,12 @@ services:
     # generee dans son coin. D'ou le volume partage.
     volumes: !override
       - jwt_keys:/var/www/html/config/jwt
+    # MESSENGER_MEMORY_LIMIT=128M fait deja sortir le consumer avant ce
+    # plafond ; celui-ci n'attrape que ce qui fuirait hors du consumer.
+    deploy:
+      resources:
+        limits:
+          memory: 224M
     logging: *prod-logging
 
   cron:
@@ -190,12 +289,22 @@ services:
       - ./infra/cron/anilist-sync-now:/usr/local/bin/anilist-sync-now:ro
       - anilist_sync_state:/state
       - jwt_keys:/var/www/html/config/jwt
+    # Au repos 8 Mo, mais il lance `app:anilist:sync` en CLI (memory_limit
+    # 512M) : le plafond doit laisser passer une synchronisation complete.
+    deploy:
+      resources:
+        limits:
+          memory: 320M
     logging: *prod-logging
 
   # -------------------------------------------------------------------------
   # nginx — reste en place, mais n'est plus le frontal
   # -------------------------------------------------------------------------
   nginx:
+    deploy:
+      resources:
+        limits:
+          memory: 64M
     logging: *prod-logging
 
   # -------------------------------------------------------------------------
@@ -247,6 +356,10 @@ services:
     # fichier de dev viendraient s'ajouter ici : le conteneur prod ne sert que
     # /usr/share/nginx/html, ils seraient au mieux inutiles, au pire trompeurs.
     volumes: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 64M
     logging: *prod-logging
 
   # -------------------------------------------------------------------------
@@ -265,6 +378,12 @@ services:
       MERCURE_DEMO_UI: "false"
       MERCURE_CORS_ORIGINS: https://${PUBLIC_DOMAIN}
       MERCURE_PUBLISH_ORIGINS: https://${PUBLIC_DOMAIN}
+    # Croit avec le nombre d'abonnes SSE simultanes : a surveiller en premier
+    # si le trafic temps reel monte.
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     logging: *prod-logging
 
   # -------------------------------------------------------------------------
@@ -314,6 +433,11 @@ services:
     depends_on:
       database:
         condition: service_healthy
+    # pg_dump d'une base de quelques dizaines de Mo : large.
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     logging: *prod-logging
     networks:
       - manga-stream

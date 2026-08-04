@@ -31,7 +31,15 @@ log() { echo "[entrypoint] $*"; }
 generate_jwt_keys() {
     [ "${GENERATE_JWT_KEYS:-1}" = "1" ] || return 0
     [ -d config ] || return 0
-    [ -f config/jwt/private.pem ] && [ -f config/jwt/public.pem ] && return 0
+    if [ -f config/jwt/private.pem ] && [ -f config/jwt/public.pem ]; then
+        # Les droits sont resserrés même sur une paire déjà présente : quand un
+        # volume nommé VIDE est monté, docker y recopie le contenu de l'image
+        # AVEC SES DROITS. Une clé privée arrivée là en 0666 y resterait sinon
+        # jusqu'à la fin des temps.
+        chmod 600 config/jwt/private.pem 2>/dev/null || true
+        chmod 644 config/jwt/public.pem 2>/dev/null || true
+        return 0
+    fi
 
     if ! command -v openssl >/dev/null 2>&1; then
         log "openssl missing -> cannot generate the JWT keypair"
