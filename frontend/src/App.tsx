@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { CatalogPage } from './pages/CatalogPage'
 import { MediaDetailPage } from './pages/MediaDetailPage'
+import { ListPage } from './pages/ListPage'
 import { FavoritesPage } from './pages/FavoritesPage'
 import { RecommendationsPage } from './pages/RecommendationsPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -22,6 +23,9 @@ import { USE_MOCKS } from './config'
  */
 const NAV_ITEMS = [
   { to: '/', label: 'Catalogue', end: true, authOnly: false },
+  // Juste après le catalogue, et avant tout le reste : c'est l'écran qu'un
+  // utilisateur de tracker ouvre quotidiennement.
+  { to: '/list', label: 'Ma liste', end: false, authOnly: true },
   { to: '/recommendations', label: 'Pour vous', end: false, authOnly: true },
   { to: '/favorites', label: 'Favoris', end: false, authOnly: false },
   { to: '/profile', label: 'Profil', end: false, authOnly: false },
@@ -112,6 +116,14 @@ export default function App() {
         <Route path="/password/forgot" element={<PasswordForgotPage />} />
         <Route path="/password/reset" element={<PasswordResetPage />} />
 
+        <Route
+          path="/list"
+          element={
+            <RequireAuth>
+              <ListPage />
+            </RequireAuth>
+          }
+        />
         <Route
           path="/favorites"
           element={

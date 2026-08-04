@@ -58,5 +58,14 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     exclude: ['node_modules/**', 'dist/**', 'public/**'],
     restoreMocks: true,
+    /**
+     * `API_BASE_URL` vaut '' en production (même origine), ce que le `fetch`
+     * de Node refuse : `openapi-fetch` construit un `Request`, et une URL
+     * relative y lève « Failed to parse URL » avant même qu'un espion puisse
+     * intercepter quoi que ce soit. Une base absolue rend les requêtes
+     * observables sans rien changer au code testé — `normalizeBaseUrl` reste
+     * couvert par ses propres tests, sur ses propres entrées.
+     */
+    env: { VITE_API_URL: 'http://api.test/api' },
   },
 })

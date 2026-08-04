@@ -2214,3 +2214,240 @@ code {
     height: 15px;
   }
 }
+
+/* =========================================================================
+   Phase 5 — écran « Ma liste »
+   ========================================================================= */
+
+.mylist {
+  gap: 1.1rem;
+}
+
+/* ---------- Onglets par statut ---------- */
+/* Défilement horizontal plutôt que retour à la ligne : six onglets sur un
+   téléphone tiendraient sur trois lignes, et la barre cesserait de se lire
+   comme une barre. */
+.mylist__tabs {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+.mylist__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 550;
+  cursor: pointer;
+  /* Le soulignement de l'onglet actif doit recouvrir la bordure du conteneur. */
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+}
+
+.mylist__tab:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.mylist__tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  background: var(--surface);
+}
+
+.mylist__controls {
+  align-items: center;
+  gap: 0.8rem;
+}
+
+/* Le libellé « Trier par » sur la même ligne que le sélecteur : empilé, il
+   décalerait la rangée entière par rapport au groupe de boutons. */
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mylist__section {
+  margin-top: 1.2rem;
+}
+
+.mylist__list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ---------- Une ligne ---------- */
+/* Grille nommée : les colonnes gardent leur alignement d'une ligne à l'autre
+   même quand la note ou la barre manquent, ce qu'un flex ne garantit pas. */
+.mylist-row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 150px 92px auto;
+  grid-template-areas: 'cover body progress score actions';
+  align-items: center;
+  gap: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.8rem;
+}
+
+.mylist-row.is-pending {
+  opacity: 0.65;
+}
+
+.mylist-row__cover {
+  grid-area: cover;
+  display: block;
+  width: 46px;
+  height: 64px;
+  border-radius: calc(var(--radius) - 4px);
+  overflow: hidden;
+  background: var(--bg);
+  flex: none;
+}
+
+.mylist-row__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mylist-row__body {
+  grid-area: body;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.mylist-row__title {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 620;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mylist-row__title:hover {
+  color: var(--accent);
+}
+
+.mylist-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+}
+
+.mylist-row__progress {
+  grid-area: progress;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.mylist-row__counter {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* La barre pleine hauteur porte son propre libellé ; ici le compteur est déjà
+   au-dessus, la barre n'a plus qu'à montrer la proportion. */
+.progress-bar--slim {
+  display: block;
+  height: 6px;
+  margin-top: 0;
+}
+
+.mylist-row__no-total {
+  font-size: 0.72rem;
+}
+
+.mylist-row__score {
+  grid-area: score;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mylist-row__actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Le geste le plus fréquent de l'écran : assez large pour être visé au pouce,
+   et de largeur fixe pour que la colonne ne danse pas d'une ligne à l'autre. */
+.mylist-row__plus {
+  min-width: 3.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mylist-row__status .select {
+  max-width: 9.5rem;
+}
+
+/* Proposition et erreur passent sous la ligne, sur toute sa largeur : les
+   glisser dans une colonne ferait sauter la hauteur de toutes les autres. */
+.mylist-row__notice,
+.mylist-row__error {
+  grid-area: auto / 1 / auto / -1;
+  margin: 0.2rem 0 0;
+}
+
+@media (max-width: 900px) {
+  /* La note et la barre passent sous le titre : cinq colonnes sur un téléphone
+     réduisent le titre à trois lettres. Les actions restent sur la première
+     rangée — c'est pour elles qu'on vient. */
+  .mylist-row {
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'cover body    actions'
+      'cover progress score';
+    row-gap: 0.5rem;
+  }
+
+  .mylist-row__cover {
+    align-self: start;
+  }
+
+  .mylist-row__score {
+    text-align: left;
+    align-self: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .mylist-row {
+    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-areas:
+      'cover body'
+      'cover progress'
+      'score actions';
+  }
+
+  .mylist-row__actions {
+    justify-content: flex-end;
+  }
+}
