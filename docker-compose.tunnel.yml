@@ -47,5 +47,25 @@ services:
       - ./infra/backup/pg-backup.sh:/usr/local/bin/pg-backup.sh:ro
       - ./infra/backup/pg-restore.sh:/usr/local/bin/pg-restore.sh:ro
 
+  # Les clés JWT vivaient dans le système de fichiers du conteneur. À chaque
+  # recréation, l'image réinstallait la paire figée à sa construction — chiffrée
+  # avec une autre phrase secrète que celle de .env.prod. L'entrypoint, voyant
+  # les fichiers présents, n'en régénérait pas : toute connexion échouait en 500
+  # avec « unable to encode the JWT token », un message qui ne désigne pas la
+  # cause. Un volume nommé rend la paire persistante et cohérente d'un
+  # redémarrage à l'autre.
+  backend:
+    volumes:
+      - jwt_keys:/var/www/html/config/jwt
+
+  worker:
+    volumes:
+      - jwt_keys:/var/www/html/config/jwt
+
+  cron:
+    volumes:
+      - jwt_keys:/var/www/html/config/jwt
+
 volumes:
   tunnel_backups:
+  jwt_keys:
