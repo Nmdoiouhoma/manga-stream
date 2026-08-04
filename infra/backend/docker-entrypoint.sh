@@ -157,11 +157,20 @@ warm_cache() {
 # précisément celles qu'un cache incomplet perd en premier. Inutile de lister
 # /api/animes : le jour où le cache est cassé, elle répond quand même.
 #
+# NE S'APPLIQUE QU'EN PRODUCTION, et c'est délibéré. En développement le code
+# est bind-monté et incomplet par nature — un coéquipier peut très
+# légitimement avoir, à un instant donné, un `security.yaml` en cours d'édition
+# ou une ressource à moitié écrite. Faire refuser le démarrage à son conteneur
+# pour ça remplacerait un bug de production par une nuisance quotidienne. Et
+# `debug:router` en dev construirait le cache de dev à chaque `up`, pour rien.
+#
 # Réglages :
-#   STARTUP_CONTRACT_CHECK=0   désactive le contrôle (soupape de secours ; si
-#                              vous l'utilisez en production, ouvrez un ticket
-#                              dans la foulée : le contrat est faux ou le
-#                              cache l'est)
+#   STARTUP_CONTRACT_CHECK=auto  (défaut) contrôle uniquement si APP_ENV=prod
+#                              =1        contrôle toujours
+#                              =0        jamais (soupape de secours ; si vous
+#                                        l'utilisez en production, ouvrez un
+#                                        ticket dans la foulée : soit le
+#                                        contrat est faux, soit le cache l'est)
 #   REQUIRED_ROUTES="..."      remplace la liste (chemins séparés par des
 #                              espaces). À tenir à jour avec le backend.
 # ---------------------------------------------------------------------------
@@ -174,10 +183,15 @@ REQUIRED_ROUTES_DEFAULT="/api/register /api/me /api/login /api/password/forgot /
 REQUIRED_CLASSES_DEFAULT="App\\Filter\\CombinedTitleFilter"
 
 assert_startup_contract() {
-    [ "${STARTUP_CONTRACT_CHECK:-1}" = "0" ] && return 0
-    [ -f bin/console ] || return 0
-
+    local mode="${STARTUP_CONTRACT_CHECK:-auto}"
     local env_name="${APP_ENV:-prod}"
+
+    [ "$mode" = "0" ] && return 0
+    [ -f bin/console ] || return 0
+    if [ "$mode" = "auto" ] && [ "$env_name" != "prod" ]; then
+        return 0
+    fi
+
     local required="${REQUIRED_ROUTES:-$REQUIRED_ROUTES_DEFAULT}"
     local classes="${REQUIRED_CLASSES:-$REQUIRED_CLASSES_DEFAULT}"
     local declared missing="" path class short
@@ -400,8 +414,11 @@ fi
 #
 #   docker run --rm -e APP_ENV=prod manga-stream-backend:prod check
 if [ "$1" = "check" ]; then
-    warm_cache || exit 1
-    assert_startup_contract || exit 1
+    # `check` est explicite : on force les deux contrôles, quel que soit
+    # APP_ENV. Sans ça, une CI qui oublierait APP_ENV=prod verrait cette étape
+    # passer au vert en n'ayant rien vérifié du tout.
+    WARMUP_CACHE=1 warm_cache || exit 1
+    STARTUP_CONTRACT_CHECK=1 assert_startup_contract || exit 1
     log "check: l'image satisfait le contrat de démarrage"
     exit 0
 fi

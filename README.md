@@ -1065,8 +1065,12 @@ sudo docker run --rm -e APP_ENV=prod manga-stream-backend:prod check
 
 Réglages, si le backend fait légitimement évoluer ses routes :
 `REQUIRED_ROUTES` (liste de chemins), `REQUIRED_CLASSES`, et la soupape
-`STARTUP_CONTRACT_CHECK=0` — à n'utiliser qu'en connaissance de cause. La CI
-joue ce même `check` sur l'image de production à chaque commit.
+`STARTUP_CONTRACT_CHECK=0` — à n'utiliser qu'en connaissance de cause. Le
+contrôle ne s'applique **qu'en production** (`auto`) : en développement le code
+est bind-monté et donc incomplet par nature au fil de la journée, faire refuser
+le démarrage pour ça remplacerait un bug de production par une nuisance
+quotidienne. La CI joue ce même `check` sur l'image de production à chaque
+commit.
 
 ### Ce qui reste fragile sur 908 Mo
 

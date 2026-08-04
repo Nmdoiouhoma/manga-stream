@@ -71,14 +71,15 @@ x-backend-env: &backend-env
   #
   #   WARMUP_CACHE=auto  -> l'entrypoint purge var/cache/$APP_ENV et joue
   #                         cache:warmup avant php-fpm, quand APP_ENV=prod.
-  #   STARTUP_CONTRACT_CHECK=1 -> le rôle HTTP refuse de démarrer si les routes
-  #                         critiques manquent du routeur.
+  #   STARTUP_CONTRACT_CHECK=auto -> en production uniquement, le rôle HTTP
+  #                         refuse de démarrer si les routes critiques manquent
+  #                         du routeur.
   #
   # Le détail, et l'historique de la panne qui les justifie, sont dans
   # infra/backend/docker-entrypoint.sh et dans .env.example.
   # -------------------------------------------------------------------------
   WARMUP_CACHE: ${WARMUP_CACHE:-auto}
-  STARTUP_CONTRACT_CHECK: ${STARTUP_CONTRACT_CHECK:-1}
+  STARTUP_CONTRACT_CHECK: ${STARTUP_CONTRACT_CHECK:-auto}
   REQUIRED_ROUTES: ${REQUIRED_ROUTES:-}
   REQUIRED_CLASSES: ${REQUIRED_CLASSES:-}
   # -------------------------------------------------------------------------
