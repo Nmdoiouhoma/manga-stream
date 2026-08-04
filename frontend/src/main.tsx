@@ -76,6 +76,18 @@ function isMockWorker(worker: ServiceWorker | null | undefined): boolean {
   return worker?.scriptURL.includes(MOCK_WORKER_SCRIPT) === true
 }
 
+/** Au-delà, on renonce au nettoyage plutôt que de retarder l'affichage. */
+const PURGE_TIMEOUT_MS = 2_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_resolve, reject) => {
+      setTimeout(() => reject(new Error('délai dépassé')), ms)
+    }),
+  ])
+}
+
 /**
  * Désenregistre tout Service Worker MSW resté en place alors que les mocks sont
  * éteints.
@@ -107,9 +119,13 @@ async function purgeStaleMockWorker(): Promise<boolean> {
 
   let registrations: readonly ServiceWorkerRegistration[]
   try {
-    registrations = await navigator.serviceWorker.getRegistrations()
+    // Course contre une horloge : ce nettoyage précède le montage de
+    // l'application, donc une promesse qui ne se résout jamais — worker bloqué,
+    // navigateur exotique — donnerait un écran blanc. Renoncer au nettoyage est
+    // toujours préférable à ne pas afficher le site.
+    registrations = await withTimeout(navigator.serviceWorker.getRegistrations(), PURGE_TIMEOUT_MS)
   } catch {
-    // Contexte non sécurisé, API désactivée : rien à nettoyer de toute façon.
+    // Contexte non sécurisé, API désactivée, ou délai dépassé.
     return false
   }
 
