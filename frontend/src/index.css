@@ -1256,6 +1256,13 @@ code {
   padding: 0.8rem 0.95rem;
 }
 
+/* Affiché avant confirmation du serveur. Assez estompé pour qu'on voie que ce
+   n'est pas encore acquis, assez lisible pour qu'on relise ce qu'on a écrit. */
+.comment.is-pending {
+  opacity: 0.62;
+  border-style: dashed;
+}
+
 .comment__head {
   display: flex;
   align-items: baseline;

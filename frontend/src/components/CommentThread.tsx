@@ -142,27 +142,34 @@ function CommentItem({
   // Deletion is offered to the author only. The backend enforces it for real;
   // this is presentation, not security.
   const isAuthor = currentUserIri !== null && comment.authorIri === currentUserIri
+  // Affiché immédiatement, pas encore confirmé par le serveur : il n'a donc ni
+  // id ni IRI réelle, et ni « Répondre » ni « Supprimer » ne peuvent le viser.
+  const isPending = comment.pending === true
 
   return (
-    <article className="comment">
+    <article className={`comment ${isPending ? 'is-pending' : ''}`}>
       <header className="comment__head">
         <span className="comment__author">{comment.authorName}</span>
-        {comment.createdAt && (
-          <time className="comment__date" dateTime={comment.createdAt}>
-            {formatDate(comment.createdAt)}
-          </time>
+        {isPending ? (
+          <span className="comment__date">Envoi…</span>
+        ) : (
+          comment.createdAt && (
+            <time className="comment__date" dateTime={comment.createdAt}>
+              {formatDate(comment.createdAt)}
+            </time>
+          )
         )}
       </header>
 
       <p className="comment__body">{comment.content}</p>
 
       <footer className="comment__actions">
-        {canReply && (
+        {canReply && !isPending && (
           <button type="button" className="btn btn--link" onClick={onToggleReply}>
             {isReplyOpen ? 'Annuler' : 'Répondre'}
           </button>
         )}
-        {isAuthor && (
+        {isAuthor && !isPending && (
           <button type="button" className="btn btn--link btn--danger" onClick={onDelete}>
             Supprimer
           </button>

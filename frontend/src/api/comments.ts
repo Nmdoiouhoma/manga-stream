@@ -74,8 +74,14 @@ function toNode(comment: Comment): CommentNode {
   }
 }
 
-/** Rebuilds the two-level thread from the flat collection. */
-function buildThread(comments: Comment[]): CommentNode[] {
+/**
+ * Rebuilds the two-level thread from the flat collection.
+ *
+ * Exportée pour être testée directement : c'est la seule fonction du module qui
+ * porte une vraie logique, et la couvrir à travers un rendu de composant
+ * reviendrait à tester React plutôt que la reconstruction du fil.
+ */
+export function buildThread(comments: Comment[]): CommentNode[] {
   const nodes = comments.map(toNode)
   const byIri = new Map(nodes.map((node) => [node.iri, node]))
   const roots: CommentNode[] = []
@@ -130,6 +136,59 @@ export type AddCommentInput = {
   parentIri?: string | null
 }
 
+/**
+ * Identifiant local d'un commentaire pas encore confirmé.
+ *
+ * Un compteur, et pas seulement l'horodatage : deux envois dans la même
+ * milliseconde partageraient la clé React, et le second remplacerait le premier
+ * à l'écran. Le préfixe garantit de ne jamais entrer en collision avec une IRI
+ * servie par l'API.
+ */
+let optimisticSeq = 0
+function optimisticIri(): string {
+  optimisticSeq += 1
+  return `optimistic:comment:${Date.now()}:${optimisticSeq}`
+}
+
+/**
+ * Insère un nœud optimiste dans le fil déjà en cache.
+ *
+ * Une réponse rejoint son parent en fin de liste (les réponses sont
+ * chronologiques) ; une racine passe en tête (les fils les plus récents en
+ * premier), ce qui reproduit l'ordre de `buildThread`. Un parent introuvable
+ * retombe en racine, exactement comme une réponse orpheline servie par l'API :
+ * mieux vaut le message légèrement mal placé que pas de message du tout.
+ */
+function insertOptimistic(
+  thread: CommentNode[],
+  node: CommentNode,
+  parentIri: string | null,
+): CommentNode[] {
+  if (!parentIri) return [node, ...thread]
+
+  let attached = false
+  const next = thread.map((root) => {
+    if (root.iri !== parentIri) return root
+    attached = true
+    return { ...root, replies: [...root.replies, node] }
+  })
+
+  return attached ? next : [node, ...thread]
+}
+
+/**
+ * Publication d'un commentaire.
+ *
+ * ── Pourquoi une mise à jour optimiste ────────────────────────────────────
+ * Le symptôme rapporté était qu'un commentaire racine n'apparaissait qu'après
+ * un rechargement. L'invalidation seule (`onSuccess`) dépend de toute une
+ * chaîne — la mutation doit aboutir, la requête doit être *active*, le refetch
+ * doit passer, et rien ne doit intercepter la requête entre-temps. Écrire
+ * directement dans le cache court-circuite cette chaîne : le message est à
+ * l'écran au moment du clic, et il en repart si le serveur refuse.
+ *
+ * `useDeleteComment` procède déjà ainsi ; c'était l'asymétrie fautive.
+ */
 export function useAddComment() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -150,7 +209,42 @@ export function useAddComment() {
       const result = await apiClient.POST('/api/comments', { body })
       return unwrap(result)
     },
-    onSuccess: (_data, input) => {
+
+    onMutate: async (input: AddCommentInput) => {
+      const key = commentsQueryKey(input.targetIri)
+      // Sans ça, un refetch déjà en vol écraserait le nœud optimiste par une
+      // réponse serveur antérieure à l'envoi.
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData<CommentNode[]>(key) ?? []
+
+      const node: CommentNode = {
+        iri: optimisticIri(),
+        // `null` et non un faux id : le bouton « Supprimer » refuse un
+        // commentaire sans id plutôt que d'appeler /api/comments/null.
+        id: null,
+        content: input.content,
+        authorIri: user?.iri ?? null,
+        authorName: user?.username || 'Vous',
+        createdAt: new Date().toISOString(),
+        parentIri: input.parentIri ?? null,
+        replies: [],
+        pending: true,
+      }
+
+      queryClient.setQueryData(key, insertOptimistic(previous, node, input.parentIri ?? null))
+      return { previous }
+    },
+
+    onError: (_error, input, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(commentsQueryKey(input.targetIri), context.previous)
+      }
+    },
+
+    // `onSettled` et pas `onSuccess` : après un échec, le fil rétabli peut
+    // lui-même être périmé (c'est peut-être un conflit qui a fait échouer
+    // l'envoi), et refetcher est de toute façon la bonne conclusion.
+    onSettled: (_data, _error, input) => {
       void queryClient.invalidateQueries({ queryKey: commentsQueryKey(input.targetIri) })
     },
   })
