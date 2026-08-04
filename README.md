@@ -210,6 +210,39 @@ git ls-files | grep -E '\.pem$|^\.env$'                   # doit être vide
 Enfin, `GENERATE_JWT_KEYS=0` dans `.env` désactive la génération automatique
 (utile si vous montez vos propres clés dans le conteneur).
 
+### En production, les clés vivent dans un volume
+
+En développement, `backend/config/jwt/` est monté depuis le poste : les clés
+survivent naturellement. **En production il n'y a aucun bind-mount** — le code
+est copié dans l'image — et les clés vivaient donc dans le système de fichiers
+du conteneur, c'est-à-dire nulle part de durable.
+
+Le symptôme est particulièrement trompeur : l'inscription fonctionne, le
+catalogue fonctionne, et **seule la connexion** échoue en 500
+`unable to encode the JWT token` — un message qui ne désigne pas la cause.
+Selon les cas, la recréation du conteneur repartait soit d'une paire figée dans
+l'image (chiffrée avec la phrase secrète d'une *autre* machine), soit d'une
+paire toute neuve à chaque fois (tous les jetons émis invalidés à chaud).
+
+Le volume nommé `jwt_keys` est déclaré dans `docker-compose.prod.yml` pour
+`backend`, `worker` et `cron` — les trois doivent partager **la même** paire.
+Vérifier qu'elle survit :
+
+```bash
+ms exec -T backend sha256sum config/jwt/public.pem
+ms up -d --force-recreate backend
+ms exec -T backend sha256sum config/jwt/public.pem   # même empreinte
+```
+
+Pour **révoquer** les clés (déconnexion générale, comportement attendu d'une
+révocation) :
+
+```bash
+ms down                                       # jamais `down -v`
+sudo docker volume rm manga-stream_jwt_keys
+ms up -d
+```
+
 ---
 
 ## E-mails en développement : Mailpit
@@ -545,11 +578,15 @@ diff <(grep -o '^[A-Z_]*=' .env.example) <(grep -o '^[A-Z_]*=' .env)
 
 ## Déploiement
 
-> **État** : tout est écrit, validé et testable hors ligne — surcouche compose,
-> configuration Caddy, scripts de sauvegarde et de restauration. **Rien n'est
-> encore déployé** : il n'y a ni serveur ni domaine à ce jour. La section
-> décrit la mise en ligne pas à pas et signale ce qui ne pourra être vérifié
-> que sur la machine cible.
+> **État : EN LIGNE.** <https://16.171.196.127.nip.io> — EC2 `t3.micro`
+> (2 vCPU, **908 Mo de RAM utilisables**, 30 Go EBS) à Stockholm, Ubuntu 26.04,
+> HTTPS Let's Encrypt via Caddy, 250 animes / 250 mangas / 4392 épisodes en
+> base.
+>
+> La procédure ci-dessous est celle **réellement suivie**, pas une procédure
+> théorique. Les écarts avec ce qu'on aurait prévu (agrandir le volume EBS,
+> ajouter du swap avant même de construire les images) sont conservés : ce sont
+> eux qui coûtent une soirée quand on les découvre en direct.
 
 ### Pourquoi un VPS et pas un PaaS
 
@@ -588,51 +625,235 @@ esthétique :
   la page s'afficherait, et aucune notification n'arriverait jamais ;
 - les cookies n'ont pas besoin d'être partagés entre sites.
 
-### Prérequis sur le serveur
+### La machine réellement utilisée, et ce qu'elle impose
 
-- Debian 12 ou Ubuntu 24.04, 2 vCPU / 4 Go, Docker Engine + plugin compose ;
-- un enregistrement DNS **A** (et **AAAA** en IPv6) pointant sur le serveur,
-  **propagé avant le premier démarrage** — Caddy demande son certificat
-  immédiatement et Let's Encrypt plafonne à 5 échecs par heure ;
-- ports 80 et 443 ouverts. Le 80 n'est pas décoratif : il porte le challenge
-  HTTP-01 et la redirection vers HTTPS.
+| | |
+| --- | --- |
+| Instance | EC2 `t3.micro`, région `eu-north-1` (Stockholm) |
+| CPU / RAM | 2 vCPU / **908 Mo utilisables** |
+| Swap | **4 Go** en fichier (`/swapfile`), ajouté à la main |
+| Disque | EBS **30 Go** (le volume de 8 Go par défaut ne suffit pas) |
+| Système | Ubuntu 26.04 LTS |
+| Docker | Engine 29.x + compose v5, dépôt officiel Docker |
+| Nom public | `16.171.196.127.nip.io` — nip.io résout `<ip>.nip.io` vers `<ip>`, ce qui donne un nom valide pour Let's Encrypt **sans acheter de domaine** |
 
-### Mise en ligne
+**908 Mo, c'est peu, et ça se voit à trois endroits :**
+
+1. **`npm run build` du frontend échoue par manque de mémoire sans swap.** Le
+   swap n'est pas un confort ici, c'est un prérequis de construction. À faire
+   *avant* le premier `docker compose build`.
+2. **Le pool php-fpm est le seul service qui grandit avec le trafic** (~50 Mo
+   par requête simultanée). Il est plafonné à 6 enfants, voir
+   `infra/backend/php/php-fpm-prod.conf` et le budget mémoire commenté en tête
+   de `docker-compose.prod.yml`.
+3. **Les images Docker et leurs couches intermédiaires remplissent 8 Go de
+   disque** avant même que la stack ne tourne — d'où les 30 Go.
+
+### Prérequis
+
+- ports **80 et 443** ouverts dans le groupe de sécurité. Le 80 n'est pas
+  décoratif : il porte le challenge HTTP-01 et la redirection vers HTTPS ;
+- un nom qui résout vers l'IP **avant le premier démarrage** — Caddy demande son
+  certificat immédiatement et Let's Encrypt plafonne à 5 échecs par heure. Avec
+  `nip.io` la résolution est immédiate, il n'y a pas de propagation DNS à
+  attendre ;
+- une paire de clés SSH. Ici `~/.ssh/aws-manga`.
+
+### Mise en ligne — la procédure réellement suivie
 
 ```bash
-# 1. le code
-ssh admin@vps
+ssh -i ~/.ssh/aws-manga ubuntu@ec2-16-171-196-127.eu-north-1.compute.amazonaws.com
+```
+
+#### 1. Agrandir le volume EBS
+
+À faire **d'abord**, parce que le découvrir au milieu d'un build laisse une
+image à moitié construite et un disque plein.
+
+Le volume est porté de 8 à 30 Go dans la console AWS (EC2 → Volumes → *Modify
+volume*). AWS agrandit le **disque**, pas la partition ni le système de
+fichiers : les deux dernières étapes sont à faire sur la machine, à chaud.
+
+```bash
+lsblk                                   # nvme0n1 fait 30G, nvme0n1p1 encore 8G
+sudo growpart /dev/nvme0n1 1            # étend la partition
+sudo resize2fs /dev/nvme0n1p1           # étend le système de fichiers
+df -h /                                 # doit afficher ~29G
+```
+
+#### 2. Ajouter 4 Go de swap
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # survit au reboot
+swapon --show
+```
+
+Sans cette étape, le build du frontend meurt sur un `Killed` du tueur OOM —
+message qui ne dit pas qu'il manque de la mémoire.
+
+#### 3. Docker, depuis le dépôt officiel
+
+Le paquet `docker.io` d'Ubuntu est trop ancien pour le plugin compose v2
+utilisé ici.
+
+```bash
+sudo apt-get update && sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+     -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io \
+     docker-buildx-plugin docker-compose-plugin
+sudo docker compose version
+```
+
+Les commandes restent préfixées par `sudo` dans toute cette section. Ajouter
+l'utilisateur au groupe `docker` équivaut à lui donner root sur la machine —
+sur un serveur qui n'a qu'un administrateur, `sudo` explicite est plus lisible
+et pas plus coûteux.
+
+#### 4. Cloner le dépôt
+
+```bash
 sudo mkdir -p /srv/manga-stream && sudo chown "$USER" /srv/manga-stream
 git clone https://github.com/<compte>/manga-stream.git /srv/manga-stream
 cd /srv/manga-stream
+```
 
-# 2. l'environnement
-cp .env.prod.example .env
-chmod 600 .env
+#### 5. `.env.prod` — et les secrets générés ici, jamais ailleurs
 
-# 3. LES SECRETS SE GÉNÈRENT ICI, PAS AILLEURS
+Le fichier s'appelle **`.env.prod`** et non `.env` : il est passé
+explicitement par `--env-file` (voir plus bas). C'est délibéré — un `.env`
+serait ramassé automatiquement par n'importe quelle commande `docker compose`
+lancée dans ce répertoire, y compris une commande de développement.
+
+```bash
+cp .env.prod.example .env.prod
+chmod 600 .env.prod          # il contient tous les secrets de production
+
 openssl rand -hex 32   # -> APP_SECRET
 openssl rand -hex 32   # -> MERCURE_JWT_SECRET
 openssl rand -hex 32   # -> JWT_PASSPHRASE
 openssl rand -hex 24   # -> POSTGRES_PASSWORD (à reporter aussi dans DATABASE_URL)
-vi .env                # + PUBLIC_DOMAIN, ACME_EMAIL, MAILER_DSN, CORS_ALLOW_ORIGIN
 
-# 4. deux fichiers compose à chaque commande — on le pose une fois pour toutes
-export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
-
-# 5. relire ce que compose a réellement compris AVANT de démarrer
-docker compose config | less
-
-# 6. construire puis démarrer
-docker compose build
-docker compose up -d
-
-# 7. le schéma (jamais automatique)
-docker compose exec backend php bin/console doctrine:migrations:migrate --no-interaction
-
-# 8. le catalogue
-docker compose exec backend php bin/console app:anilist:sync
+vi .env.prod
+#   PUBLIC_DOMAIN=16.171.196.127.nip.io
+#   ACME_EMAIL=<votre adresse>
+#   CORS_ALLOW_ORIGIN=^https://16\.171\.196\.127\.nip\.io$      (regex : points échappés)
+#   DEFAULT_URI / MERCURE_PUBLIC_URL / VITE_MERCURE_URL sur ce même nom
+#   MAILER_DSN=<relais SMTP réel>
 ```
+
+`.env.prod` est **gitignoré** et ne doit jamais être committé : ce dépôt est
+public. Avec un `APP_SECRET` ou une `JWT_PASSPHRASE` connus, n'importe qui
+forge un jeton valide pour n'importe quel compte.
+
+#### 6. Construire et démarrer
+
+```bash
+cd /srv/manga-stream
+sudo docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml config | less   # relire d'abord
+
+sudo docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml build
+sudo docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+Le build prend plusieurs minutes sur 2 vCPU. C'est aussi le moment où le swap
+sert : sans lui, le frontend meurt en `Killed`.
+
+#### 7. Le schéma, puis les données
+
+Les migrations ne sont **jamais** automatiques (`RUN_MIGRATIONS=0` par défaut) :
+un redéploiement ne doit pas modifier un schéma sans qu'on l'ait décidé.
+
+```bash
+sudo docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml \
+  exec -T backend php bin/console doctrine:migrations:migrate --no-interaction
+```
+
+Puis, **au choix** :
+
+```bash
+# (a) repartir d'un dump existant — c'est ce qui a été fait ici : le catalogue
+#     était déjà constitué en local, le resynchroniser depuis AniList aurait
+#     coûté une heure de requêtes pour un résultat identique.
+scp -i ~/.ssh/aws-manga backups/manga_stream-<horodatage>.dump \
+    ubuntu@ec2-16-171-196-127.eu-north-1.compute.amazonaws.com:/tmp/
+sudo cp /tmp/manga_stream-*.dump /srv/manga-stream/backups/
+sudo docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml \
+  exec -T backup pg-restore.sh restore /backups/manga_stream-<horodatage>.dump
+
+# (b) ou constituer le catalogue depuis AniList (long)
+sudo docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml \
+  exec -T backend php bin/console app:anilist:sync
+```
+
+#### 8. Vérifier
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://16.171.196.127.nip.io/api/animes
+# 200 attendu, avec un certificat valide
+
+sudo docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml logs backend | grep entrypoint
+# doit contenir « contrat de démarrage vérifié : N routes »
+```
+
+### La commande de gestion à distance
+
+Trois `-f`, un `--env-file` et un `sudo` à retaper à chaque fois, c'est la
+garantie qu'on finira par en oublier un — et une commande à laquelle il manque
+`-f docker-compose.prod.yml` démarre la stack **de développement** sur le
+serveur de production, en écrasant le code de l'image par un bind-mount.
+
+Poser l'alias une fois pour toutes dans `~/.bashrc` du serveur :
+
+```bash
+cat >> ~/.bashrc <<'EOF'
+alias ms='sudo docker compose --env-file /srv/manga-stream/.env.prod \
+  -f /srv/manga-stream/docker-compose.yml \
+  -f /srv/manga-stream/docker-compose.prod.yml \
+  --project-directory /srv/manga-stream'
+EOF
+. ~/.bashrc
+```
+
+Ensuite, depuis n'importe où sur le serveur :
+
+```bash
+ms ps                                   # état des conteneurs
+ms logs -f backend                      # journal du backend
+ms exec -T backend php bin/console cache:pool:list
+ms restart backend
+ms exec -T backup pg-backup.sh once     # dump immédiat
+ms exec cron anilist-sync-status        # dernière synchronisation AniList
+```
+
+Et depuis le poste, sans ouvrir de session interactive :
+
+```bash
+ssh -i ~/.ssh/aws-manga \
+    ubuntu@ec2-16-171-196-127.eu-north-1.compute.amazonaws.com \
+    'cd /srv/manga-stream && sudo docker compose --env-file .env.prod \
+       -f docker-compose.yml -f docker-compose.prod.yml ps'
+```
+
+**`docker compose down -v` ne doit jamais être tapé sur ce serveur** : le `-v`
+détruit `database_data`, c'est-à-dire toute la base.
 
 #### Les secrets ne viennent jamais du dépôt
 
@@ -645,11 +866,14 @@ connue, n'importe qui forge un jeton valide pour n'importe quel compte ; avec
 monde.
 
 La paire RSA est générée automatiquement au premier démarrage à partir de
-`JWT_PASSPHRASE`. **Ne la copiez pas depuis un poste de développement.**
+`JWT_PASSPHRASE`, et vit dans le volume `jwt_keys` (voir « En production, les
+clés vivent dans un volume »). **Ne la copiez pas depuis un poste de
+développement** — c'est précisément ce que faisait le `COPY . .` de l'image
+avant l'ajout de `infra/backend/Dockerfile.dockerignore`.
 
-Sauvegardez `.env` et `backend/config/jwt/` **hors du serveur et chiffrés** :
-perdre `JWT_PASSPHRASE` ou `private.pem` invalide tous les jetons émis
-(déconnexion générale), perdre `APP_SECRET` invalide les sessions.
+Sauvegardez `.env.prod` **hors du serveur et chiffré**, ainsi qu'une copie de
+la paire de clés : perdre `JWT_PASSPHRASE` ou `private.pem` invalide tous les
+jetons émis (déconnexion générale), perdre `APP_SECRET` invalide les sessions.
 
 #### Le piège des variables `VITE_*`
 
@@ -782,41 +1006,98 @@ Deux façons de le perdre, toutes deux évitables :
 
 ### Mettre à jour
 
+Avec l'alias `ms` posé plus haut :
+
 ```bash
 cd /srv/manga-stream
-docker compose exec backup pg-backup.sh once      # d'abord un dump
+ms exec -T backup pg-backup.sh once     # d'abord un dump, toujours
 git pull
-docker compose build
-docker compose up -d
-docker compose exec backend php bin/console doctrine:migrations:migrate --no-interaction
-docker compose ps
+ms build
+ms up -d
+ms exec -T backend php bin/console doctrine:migrations:migrate --no-interaction
+ms ps
+ms logs backend | grep entrypoint       # « contrat de démarrage vérifié »
 ```
 
 Si le domaine ou les URLs publiques ont changé, ajouter
-`docker compose build --no-cache frontend` — sans quoi le bundle garde les
-anciennes valeurs (voir le piège `VITE_*` plus haut).
+`ms build --no-cache frontend` — sans quoi le bundle garde les anciennes
+valeurs (voir le piège `VITE_*` plus haut).
 
-### Ce qui ne pourra être vérifié que le jour J
+#### Le cache Symfony n'est plus votre problème
 
-Tout ce qui suit dépend d'une machine et d'un nom de domaine réels, et n'a donc
-**pas** pu être exercé :
+Il l'a été, trois fois. Après chaque recréation du conteneur backend,
+l'application repartait avec un cache incomplet : `POST /api/register`,
+`GET /api/me`, `POST /api/password/forgot`, `POST /api/password/reset` et
+`GET /api/mercure/subscription` répondaient **404** — donc du HTML de SPA côté
+navigateur — et le filtre `?title=` était ignoré (250 résultats au lieu de 3),
+**pendant que le catalogue et les filtres natifs fonctionnaient normalement.**
+Une panne partielle, silencieuse, qu'on cherche d'abord côté frontend.
 
-- l'émission du certificat Let's Encrypt et son renouvellement (utiliser
-  `acme_ca` en bac à sable, commenté en tête du `Caddyfile`, pour le premier
-  essai) ;
-- le comportement de **Mercure derrière du vrai TLS** : le flux SSE traverse un
-  saut de plus, et `flush_interval -1` est ce qui l'empêche d'être tamponné ;
-- les **cookies `secure`** — ils ne sont posés que sur une connexion réellement
-  chiffrée, donc invérifiables en local ;
-- la valeur de `SYMFONY_TRUSTED_PROXIES` **sur le sous-réseau réel du serveur**
-  si `DOCKER_SUBNET` a dû être changé pour cause de collision ;
-- le débit et la mémoire sous charge réelle.
+Deux causes, corrigées toutes les deux :
 
-Ce qui **a** été vérifié hors ligne : validité de la surcouche compose et du
-`Caddyfile`, absence de Mailpit en production, absence d'URL `localhost` dans
-le build frontend, propagation de l'IP client à travers un vrai Caddy placé
-devant nginx, et le cycle complet sauvegarde → restauration → comparaison des
-données.
+- l'image embarquait le `var/cache/prod` de la machine de build, faute de
+  `.dockerignore` (voir `infra/backend/Dockerfile.dockerignore`, qui détaille
+  au passage tout ce que le `COPY . .` ramassait au passage — dont les clés
+  JWT privées du poste du développeur) ;
+- sur un clone git propre, l'image partait avec un cache **vide**, rempli
+  paresseusement à la première requête par plusieurs enfants php-fpm en
+  concurrence.
+
+Désormais l'entrypoint supprime `var/cache/$APP_ENV` et joue `cache:warmup`
+**avant** de lancer php-fpm : un seul processus, à partir du code réellement
+présent, avant la première requête. Coût : ~4 s au démarrage du conteneur.
+
+Et un garde-fou refuse le démarrage si les routes critiques manquent :
+
+```
+################################################################################
+# DÉMARRAGE REFUSÉ — le contrat d'API n'est pas satisfait
+#
+# routes absentes du routeur : /api/register /api/me ...
+```
+
+Un conteneur qui ne démarre pas se voit tout de suite ; une inscription muette,
+non. Le contrôle se rejoue hors service sur n'importe quelle image :
+
+```bash
+sudo docker run --rm -e APP_ENV=prod manga-stream-backend:prod check
+```
+
+Réglages, si le backend fait légitimement évoluer ses routes :
+`REQUIRED_ROUTES` (liste de chemins), `REQUIRED_CLASSES`, et la soupape
+`STARTUP_CONTRACT_CHECK=0` — à n'utiliser qu'en connaissance de cause. La CI
+joue ce même `check` sur l'image de production à chaque commit.
+
+### Ce qui reste fragile sur 908 Mo
+
+Le déploiement fonctionne, l'émission du certificat Let's Encrypt, Mercure
+derrière du vrai TLS et les cookies `secure` ont été exercés pour de bon. Reste
+ce que la taille de la machine impose, et qu'aucune configuration ne fera
+disparaître.
+
+| Ce qui cède | Quand | Ce qu'on voit |
+| --- | --- | --- |
+| **Pool php-fpm** | > 6 requêtes PHP simultanées | Latence, puis 502 quand la file de 64 déborde. Volontaire : une file qui attend vaut mieux qu'une machine en swap. |
+| **Build du frontend** | À chaque `build` | ~1 Go de pic sur `npm run build`. Ne passe que grâce au swap. Un `build` pendant que la stack tourne est risqué : **construire, puis basculer**, jamais l'inverse. |
+| **Hub Mercure** | Beaucoup d'abonnés SSE simultanés | Chaque connexion SSE est maintenue ouverte. C'est le poste qui grandira ensuite, après php-fpm. |
+| **Synchronisation AniList** | Une fois par jour, dans `cron` | Commande CLI à `memory_limit=512M` qui tourne **pendant** que le site sert. C'est le seul moment où deux gros consommateurs coexistent. |
+| **Swap sur EBS** | Dès qu'on y touche vraiment | Ce n'est pas de la RAM lente, c'est du réseau. Une machine qui swappe pour de bon n'est pas ralentie, elle est arrêtée. |
+
+Les plafonds `deploy.resources.limits` de `docker-compose.prod.yml` ne créent
+pas de mémoire : ils garantissent qu'un service qui dérape est tué **seul**, au
+lieu d'emporter PostgreSQL — que le tueur OOM du noyau viserait en premier,
+étant le plus gros processus de la machine.
+
+**Le premier euro à dépenser** n'est pas une seconde instance mais **le passage
+en `t3.small` (2 Go)**, qui double la marge et permet de remonter
+`pm.max_children`. La règle de dimensionnement est
+`(RAM disponible pour PHP) / 60 Mo`.
+
+Deux points restent non exercés :
+
+- le **renouvellement** du certificat (il faut attendre 60 jours) ;
+- le comportement sous **charge réelle et soutenue** : les chiffres ci-dessus
+  viennent de mesures au repos et de calculs, pas d'un tir de charge.
 
 ---
 
