@@ -1057,7 +1057,15 @@ Et un garde-fou refuse le démarrage si les routes critiques manquent :
 ```
 
 Un conteneur qui ne démarre pas se voit tout de suite ; une inscription muette,
-non. Le contrôle se rejoue hors service sur n'importe quelle image :
+non.
+
+> **`ms restart backend` ne suffit pas** pour prendre en compte une
+> modification de `infra/backend/docker-entrypoint.sh` : le script est **copié
+> dans l'image**, pas monté. Il faut `ms build backend && ms up -d backend`.
+> C'est vrai de tout `infra/backend/**` — le piège se paie en cherchant
+> pourquoi un correctif « ne fait rien ».
+
+Le contrôle se rejoue hors service sur n'importe quelle image :
 
 ```bash
 sudo docker run --rm -e APP_ENV=prod manga-stream-backend:prod check
