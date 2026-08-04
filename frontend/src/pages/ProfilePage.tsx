@@ -89,7 +89,12 @@ export function ProfilePage() {
           <ul className="status-list">
             {byStatus.map(({ status, count }) => (
               <li key={status} className="status-list__row">
-                <span className="status-list__label">{PROGRESS_STATUS_LABELS[status]}</span>
+                {/* Chaque barre mène à son onglet de « Ma liste » : c'est ici
+                    qu'on constate « 12 en pause », et l'action qui suit est
+                    toujours d'aller les voir. */}
+                <Link to={`/list?statut=${status}`} className="status-list__label link">
+                  {PROGRESS_STATUS_LABELS[status]}
+                </Link>
                 <span className="status-list__bar">
                   <span
                     className="status-list__fill"
@@ -104,7 +109,14 @@ export function ProfilePage() {
       </section>
 
       <section className="panel">
-        <h2 className="section__title">Activité récente</h2>
+        <h2 className="section__title">
+          Activité récente
+          {progress.length > 0 && (
+            <Link to="/list" className="link section__aside">
+              Voir toute ma liste
+            </Link>
+          )}
+        </h2>
         {progressLoading ? (
           <p className="muted">Chargement…</p>
         ) : progress.length === 0 ? (

@@ -2451,3 +2451,12 @@ code {
     justify-content: flex-end;
   }
 }
+
+/* Lien secondaire poussé à droite d'un titre de section ; `auto` plutôt qu'un
+   `justify-content: space-between` sur `.section__title`, qui décollerait aussi
+   le compteur des sections qui en ont un. */
+.section__aside {
+  margin-left: auto;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
