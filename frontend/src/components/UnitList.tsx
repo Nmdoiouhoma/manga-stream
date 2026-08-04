@@ -37,10 +37,11 @@
  * par `parseDecimal()` et tout affichage par `formatChapterNumber()`.
  */
 import { useMemo, useState } from 'react'
-import { useMediaProgress, useSaveProgress, type ProgressEntry } from '../api/progress'
+import { useMediaProgress, useSaveProgress } from '../api/progress'
 import { useAuth } from '../auth/useAuth'
 import { ExternalLink } from './ExternalLink'
 import { externalProviderName, safeExternalUrl } from '../lib/externalUrl'
+import { markUpToInput } from '../lib/progression'
 import {
   formatChapterNumber,
   formatDate,
@@ -215,7 +216,12 @@ export function UnitList({ media }: { media: MediaDetail }) {
                 pending={save.isPending}
                 onMark={() =>
                   save.mutate(
-                    markInput(media, entry, unit, current !== null && current >= unit.value),
+                    markUpToInput(
+                      { targetIri: media.iri, kind: media.kind, total: media.unitCount },
+                      entry,
+                      unit.value,
+                      current !== null && current >= unit.value,
+                    ),
                   )
                 }
               />
@@ -353,59 +359,6 @@ function UnitRow({
       </span>
     </li>
   )
-}
-
-/**
- * Construit la mise à jour de `Progress` déclenchée par un clic sur « vu ».
- *
- * Deux règles, pour ne jamais écraser une décision de l'utilisateur :
- *  - le statut n'est promu en `WATCHING` que depuis « prévu » ou depuis rien.
- *    Un titre marqué `DROPPED` ou `PAUSED` garde son statut : cocher un
- *    épisode n'est pas dire « j'ai repris ».
- *  - `COMPLETED` n'est posé que si le total est connu et atteint. Sans total
- *    fiable (`unitCount` vient d'AniList et peut manquer), on ne devine pas.
- *
- * Décocher ramène juste avant l'unité visée, ce qui est la seule
- * interprétation non destructrice : remettre à zéro perdrait tout l'historique
- * sur un clic mal placé.
- */
-function markInput(
-  media: MediaDetail,
-  entry: ProgressEntry | null,
-  unit: Unit,
-  seen: boolean,
-) {
-  const isAnime = media.kind === 'anime'
-  const target = seen ? Math.max(0, unit.value - 1) : unit.value
-  const total = media.unitCount
-
-  const reached = total !== null && total > 0 && target >= total
-  const previousStatus = entry?.status ?? null
-
-  // Reculer sous le total sur un titre `COMPLETED` le rend incohérent — et
-  // depuis que le backend valide la règle, c'est un 422 en pleine figure sur un
-  // simple décochage. Le statut redescend donc à « en cours », qui est
-  // exactement ce que le geste veut dire.
-  const leavesCompleted = previousStatus === 'COMPLETED' && !reached
-
-  const status =
-    reached && !seen
-      ? ('COMPLETED' as const)
-      : leavesCompleted || previousStatus === null || previousStatus === 'PLANNED'
-        ? ('WATCHING' as const)
-        : previousStatus
-
-  return {
-    targetIri: media.iri,
-    kind: media.kind,
-    status,
-    // `0` est une valeur légitime après un décochage du tout premier épisode ;
-    // `null` voudrait dire « non renseigné », ce qui n'est pas la même chose.
-    currentEpisode: isAnime ? target : null,
-    currentChapter: isAnime ? null : target,
-    score: entry?.score ?? null,
-    existing: entry,
-  }
 }
 
 function EmptyUnits({ isAnime, announced }: { isAnime: boolean; announced: number | null }) {

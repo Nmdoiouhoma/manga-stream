@@ -259,6 +259,20 @@ export function parseDecimal(value: string | number | null | undefined, fallback
 }
 
 /**
+ * Sérialise un décimal comme le contrat l'attend : une chaîne à deux
+ * décimales, à l'image de la colonne `decimal(8,2)`.
+ *
+ * Poster un **nombre** est refusé par le désérialiseur sur une configuration
+ * stricte, et arrondir perdrait les chapitres bis (12,5), qui sont toute la
+ * raison d'être de la colonne. `null` reste `null` : « non renseigné » n'est
+ * pas « zéro ».
+ */
+export function toDecimalString(value: number | null): string | null {
+  if (value === null || !Number.isFinite(value)) return null
+  return value.toFixed(2)
+}
+
+/**
  * Renders such a decimal for display: "12.50" reads better as "12", and
  * "12.50" must stay "12.5" (a real half-chapter), not become "13".
  */
