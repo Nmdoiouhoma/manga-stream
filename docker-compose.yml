@@ -302,8 +302,21 @@ services:
       ANILIST_SYNC_STARTUP_DELAY: ${ANILIST_SYNC_STARTUP_DELAY:-60}
       ANILIST_SYNC_RUN_ON_BOOT: ${ANILIST_SYNC_RUN_ON_BOOT:-ifnever}
       ANILIST_SYNC_TYPE: ${ANILIST_SYNC_TYPE:-BOTH}
-      ANILIST_SYNC_PAGES: ${ANILIST_SYNC_PAGES:-5}
+      # Taille du catalogue = PAGES x PER_PAGE, par type. 40 x 50 = 2000 animes
+      # et 2000 mangas.
+      #
+      # C'est bien ce couple qui plafonne le catalogue, et rien d'autre : le
+      # cron repart de la page 1 à chaque exécution, sans curseur de reprise.
+      # Le lancer plus souvent n'élargit donc rien — seule cette valeur compte.
+      #
+      # `PER_PAGE` est plafonné à 50 par AniList, pas par le projet.
+      ANILIST_SYNC_PAGES: ${ANILIST_SYNC_PAGES:-40}
       ANILIST_SYNC_PER_PAGE: ${ANILIST_SYNC_PER_PAGE:-50}
+      # Passe saisonnière, en plus du balayage général : le classement par
+      # popularité ne ramène qu'une vingtaine de titres du cours en cours, qui
+      # n'a pas encore eu le temps d'être populaire. C'est pourtant celui
+      # qu'affiche le planning. 0 désactive la passe.
+      ANILIST_SYNC_SEASON_PAGES: ${ANILIST_SYNC_SEASON_PAGES:-3}
       ANILIST_SYNC_TIMEOUT: ${ANILIST_SYNC_TIMEOUT:-3600}
     volumes:
       - ./backend:/var/www/html:cached

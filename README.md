@@ -460,6 +460,44 @@ présente des deux côtés.
 > massive doit donc être découpée en messages, ce que permet précisément le
 > worker.
 
+### Ce qui plafonne le catalogue
+
+`ANILIST_SYNC_PAGES × ANILIST_SYNC_PER_PAGE`, par type. Les valeurs par défaut
+donnent **2000 animes et 2000 mangas** ; `PER_PAGE` est plafonné à 50 par
+AniList, pas par le projet.
+
+Rien d'autre ne joue. Le cron repart de la page 1 à chaque exécution — il n'y a
+aucun curseur de reprise — donc le lancer plus souvent n'élargit pas le
+catalogue d'une ligne. C'est cette valeur, et elle seule, qui le borne. Le
+peuplement complet prend quelques minutes (débit bridé à ~50 req/min) et pèse
+peu : 17 Mo de base pour 2000 + 2000, épisodes compris.
+
+### Deux passes, et pourquoi la seconde est nécessaire
+
+Le balayage général trie par popularité, toutes saisons confondues. Il est
+excellent pour construire un catalogue, et mauvais pour un planning : une
+saison qui vient de commencer n'a pas encore eu le temps d'être populaire, si
+bien qu'elle n'y apparaît qu'en miettes.
+
+Mesuré sur l'été 2026, après un balayage complet de 40 pages : **19 animes**
+pour ce cours. Après une passe ciblée de 3 pages : **98**.
+
+Le cron enchaîne donc les deux, la seconde pilotée par
+`ANILIST_SYNC_SEASON_PAGES` (`0` la désactive). Animes seulement — un manga n'a
+pas de saison de diffusion. À la main :
+
+```bash
+docker compose exec cron php bin/console app:anilist:sync \
+  --type=ANIME --current-season --pages=3 --sync
+
+# ou un cours précis
+docker compose exec cron php bin/console app:anilist:sync \
+  --type=ANIME --season=WINTER --season-year=2027 --pages=3 --sync
+```
+
+L'upsert étant idempotent sur `anilistId`, la seconde passe complète la
+première sans jamais la défaire.
+
 ---
 
 ## Temps réel : la chaîne Mercure

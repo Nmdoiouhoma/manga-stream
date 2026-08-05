@@ -29,12 +29,18 @@ class AnilistClient
     /**
      * Requête paginée. `episodes`, `chapters` et `volumes` sont demandés dans les deux
      * cas : AniList renvoie simplement `null` pour ceux qui ne s'appliquent pas.
+     *
+     * `$season`/`$seasonYear` sont **facultatifs** : AniList ignore un argument reçu à
+     * `null`, la même requête sert donc au balayage général du catalogue (par
+     * popularité, toutes saisons confondues) et au rattrapage d'un cours précis. Ce
+     * second usage n'est pas un luxe — le balayage général ne ramène qu'une vingtaine
+     * de titres par saison récente, largement trop peu pour un écran de planning.
      */
     private const PAGE_QUERY = <<<'GRAPHQL'
-        query ($page: Int!, $perPage: Int!, $type: MediaType!) {
+        query ($page: Int!, $perPage: Int!, $type: MediaType!, $season: MediaSeason, $seasonYear: Int) {
           Page(page: $page, perPage: $perPage) {
             pageInfo { currentPage hasNextPage total }
-            media(type: $type, sort: POPULARITY_DESC, isAdult: false) {
+            media(type: $type, season: $season, seasonYear: $seasonYear, sort: POPULARITY_DESC, isAdult: false) {
               id
               type
               title { romaji english native }
@@ -137,22 +143,36 @@ class AnilistClient
     /**
      * Récupère une page de médias populaires.
      *
-     * @param string $type    AnilistMedia::TYPE_ANIME ou AnilistMedia::TYPE_MANGA
-     * @param int    $page    1-indexé
-     * @param int    $perPage 1..50 (plafond imposé par AniList)
+     * @param string      $type       AnilistMedia::TYPE_ANIME ou AnilistMedia::TYPE_MANGA
+     * @param int         $page       1-indexé
+     * @param int         $perPage    1..50 (plafond imposé par AniList)
+     * @param string|null $season     WINTER/SPRING/SUMMER/FALL, ou `null` pour ne pas filtrer
+     * @param int|null    $seasonYear année du cours, ou `null` pour ne pas filtrer
      *
      * @throws AnilistException
      */
-    public function fetchPage(string $type, int $page, int $perPage = 50): AnilistPage
-    {
+    public function fetchPage(
+        string $type,
+        int $page,
+        int $perPage = 50,
+        ?string $season = null,
+        ?int $seasonYear = null,
+    ): AnilistPage {
         $payload = $this->request(self::PAGE_QUERY, [
             'page' => max(1, $page),
             'perPage' => max(1, min(50, $perPage)),
             'type' => AnilistMedia::TYPE_MANGA === $type ? AnilistMedia::TYPE_MANGA : AnilistMedia::TYPE_ANIME,
+            // Une saison inconnue vaut « pas de filtre » : mieux qu'une erreur GraphQL
+            // à l'autre bout, qui ferait échouer toute la passe de synchronisation.
+            'season' => \in_array($season, self::SEASONS, true) ? $season : null,
+            'seasonYear' => $seasonYear,
         ]);
 
         return self::parsePage($payload, $page);
     }
+
+    /** Les seules valeurs que l'enum `MediaSeason` d'AniList accepte. */
+    public const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
 
     /**
      * Parsing pur d'une réponse `Page` : aucune I/O, directement testable.

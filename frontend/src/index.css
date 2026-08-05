@@ -215,6 +215,14 @@ select {
   color: var(--accent-soft);
 }
 
+/* ---------- Planning : navigation entre saisons ---------- */
+.season-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
 .catalog__sentinel {
   display: flex;
   justify-content: center;

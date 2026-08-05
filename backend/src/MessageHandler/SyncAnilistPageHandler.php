@@ -33,7 +33,13 @@ final class SyncAnilistPageHandler
      */
     public function __invoke(SyncAnilistPage $message): array
     {
-        $page = $this->client->fetchPage($message->type, $message->page, $message->perPage);
+        $page = $this->client->fetchPage(
+            $message->type,
+            $message->page,
+            $message->perPage,
+            $message->season,
+            $message->seasonYear,
+        );
 
         $created = 0;
         $updated = 0;
@@ -51,6 +57,8 @@ final class SyncAnilistPageHandler
         $this->logger->info('AniList : page synchronisée.', [
             'type' => $message->type,
             'page' => $message->page,
+            'season' => $message->season,
+            'seasonYear' => $message->seasonYear,
             'created' => $created,
             'updated' => $updated,
         ]);

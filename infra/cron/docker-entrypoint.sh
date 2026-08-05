@@ -46,6 +46,9 @@ RUN_ON_BOOT="${ANILIST_SYNC_RUN_ON_BOOT:-ifnever}"  # ifnever | always | never
 TYPE="${ANILIST_SYNC_TYPE:-BOTH}"
 PAGES="${ANILIST_SYNC_PAGES:-5}"
 PER_PAGE="${ANILIST_SYNC_PER_PAGE:-50}"
+# Pages de la passe saisonnière, en plus du balayage général. 0 la désactive.
+# Trois pages de 50 couvrent largement un cours (~100 titres dans les faits).
+SEASON_PAGES="${ANILIST_SYNC_SEASON_PAGES:-3}"
 TIMEOUT="${ANILIST_SYNC_TIMEOUT:-3600}"
 ENABLED="${ANILIST_SYNC_ENABLED:-true}"
 
@@ -159,7 +162,7 @@ JSON
 # Une exécution
 # ---------------------------------------------------------------------------
 run_sync() {
-    local started finished code duration
+    local started finished code duration season_code
 
     # --sync : la commande traite les pages EN LIGNE au lieu de les publier sur
     # le bus Messenger. C'est délibéré et c'est le cœur de l'exigence
@@ -181,6 +184,37 @@ run_sync() {
         --sync \
         --no-interaction 2>&1 | sed 's/^/[anilist-cron]   /'
     code=${PIPESTATUS[0]}
+
+    # Seconde passe : le cours en cours de diffusion.
+    #
+    # Le balayage ci-dessus suit la popularité toutes saisons confondues. Il
+    # construit le gros du catalogue, mais ne ramène qu'une vingtaine de titres
+    # de la saison courante — celle-ci n'a pas encore eu le temps d'être
+    # populaire. C'est trop peu pour l'écran de planning, qui affiche justement
+    # cette saison-là. Mesuré sur l'été 2026 : 19 titres après le balayage
+    # général, 98 après cette passe.
+    #
+    # ANIME seulement : un manga n'a pas de saison de diffusion.
+    #
+    # Son échec ne masque pas un balayage général réussi mais ne passe pas non
+    # plus inaperçu : le code de retour du général l'emporte s'il a déjà échoué.
+    if [ "${SEASON_PAGES}" -gt 0 ] 2>/dev/null; then
+        log "démarrage : app:anilist:sync --type=ANIME --current-season --pages=${SEASON_PAGES} --sync"
+
+        timeout "${TIMEOUT}" php /var/www/html/bin/console app:anilist:sync \
+            --type=ANIME \
+            --current-season \
+            --pages="${SEASON_PAGES}" \
+            --per-page="${PER_PAGE}" \
+            --sync \
+            --no-interaction 2>&1 | sed 's/^/[anilist-cron]   /'
+        season_code=${PIPESTATUS[0]}
+
+        if [ "$season_code" != "0" ]; then
+            log "passe saisonnière en échec : code ${season_code}"
+            [ "$code" = "0" ] && code=$season_code
+        fi
+    fi
 
     finished=$(now)
     duration=$(( finished - started ))

@@ -370,6 +370,7 @@ src/
     auth.ts        # login / register / me
     hydra.ts       # Hydra envelope normalisation (member/totalItems/view.next)
     queries.ts     # catalogue + detail hooks, filters -> query params
+    planning.ts    # une saison du catalogue, via les filtres season/seasonYear existants
     favorites.ts   # favourites, optimistic toggle with rollback
     progress.ts    # watch/read progress (decimal chapter handling lives here)
     comments.ts    # thread rebuilt client-side from `parent`
@@ -386,10 +387,13 @@ src/
     UnitList.tsx   # episodes/chapters: chunking + missing-data fallbacks
     RecommendationCard.tsx
   hooks/
-    useDebouncedValue.ts · useMercure.ts · useNotificationStream.ts
+    useDebouncedValue.ts · useMercure.ts
+    useMercureTransport.ts # hub, jeton, cookie — partagé par la cloche et le fil
+    useNotificationStream.ts · useCommentStream.ts
   lib/
     externalUrl.ts · retryAfter.ts
     progression.ts # règles de progression, sans React donc testables directement
+    season.ts      # découpage en cours de diffusion, jumeau d'AnilistSeason côté PHP
   mocks/
     data.ts        # catalogue fixtures, typed against the contract
     db.ts          # mutable store: users, favourites, progress, comments, notifications
@@ -398,6 +402,7 @@ src/
   pages/
     CatalogPage · MediaDetailPage · LoginPage · RegisterPage
     ListPage       # « Ma liste » : onglets par statut, +1, tri, édition rapide
+    PlanningPage   # « Planning » : une saison, groupée par statut, la saison dans l'URL
     FavoritesPage · RecommendationsPage · ProfilePage · NotFoundPage
   test/
     setup.ts       # matchers jest-dom, garde réseau, cleanup entre tests

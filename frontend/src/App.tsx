@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { CatalogPage } from './pages/CatalogPage'
+import { PlanningPage } from './pages/PlanningPage'
 import { MediaDetailPage } from './pages/MediaDetailPage'
 import { ListPage } from './pages/ListPage'
 import { FavoritesPage } from './pages/FavoritesPage'
@@ -26,6 +27,9 @@ const NAV_ITEMS = [
   // Juste après le catalogue, et avant tout le reste : c'est l'écran qu'un
   // utilisateur de tracker ouvre quotidiennement.
   { to: '/list', label: 'Ma liste', end: false, authOnly: true },
+  // Ouvert aux anonymes : « qu'est-ce qui sort cette saison » est une question
+  // qu'on se pose avant d'avoir un compte, pas après.
+  { to: '/planning', label: 'Planning', end: false, authOnly: false },
   { to: '/recommendations', label: 'Pour vous', end: false, authOnly: true },
   { to: '/favorites', label: 'Favoris', end: false, authOnly: false },
   { to: '/profile', label: 'Profil', end: false, authOnly: false },
@@ -105,6 +109,7 @@ export default function App() {
     <AppShell>
       <Routes>
         <Route path="/" element={<CatalogPage />} />
+        <Route path="/planning" element={<PlanningPage />} />
         <Route path="/anime/:id" element={<MediaDetailPage kind="anime" />} />
         <Route path="/manga/:id" element={<MediaDetailPage kind="manga" />} />
 
