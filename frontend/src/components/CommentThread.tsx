@@ -7,6 +7,7 @@ import {
   type CommentNode,
 } from '../api/comments'
 import { useAuth } from '../auth/useAuth'
+import { Avatar } from './Avatar'
 import { useCommentStream } from '../hooks/useCommentStream'
 import { formatDate, type MediaKind } from '../types/media'
 
@@ -154,6 +155,7 @@ function CommentItem({
   return (
     <article className={`comment ${isPending ? 'is-pending' : ''}`}>
       <header className="comment__head">
+        <Avatar name={comment.authorName} size="sm" />
         <span className="comment__author">{comment.authorName}</span>
         {isPending ? (
           // Formulé autrement que le bouton (« Envoi… ») : les deux

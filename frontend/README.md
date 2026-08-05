@@ -280,6 +280,23 @@ consistent by construction with the token's claim. `mercureTopicsFor()` in
 `config.ts` is only the fallback, and it still refuses any topic not scoped by
 `{userIri}`/`{userId}` (the phase-2 catch-all topic was removed and must not come back).
 
+### Avatars : dérivés du pseudo, pas téléversés
+
+Initiales sur une couleur stable, calculée par hachage FNV-1a du pseudo
+(`lib/avatar.ts`). Le même compte a la même pastille partout — profil,
+commentaires, barre du haut — sans qu'un seul octet soit stocké.
+
+Le choix est assumé plutôt que subi. Une vraie photo de profil demanderait une
+colonne et sa migration, un bundle d'upload, un volume Docker partagé entre le
+backend et nginx, une route dédiée dans Caddy, une validation de type et de
+taille, et une place dans la stratégie de sauvegarde — qui ne couvre
+aujourd'hui que `pg_dump`. Rien de tout cela n'existe, et la machine de
+production tient dans 908 Mo. La porte reste ouverte : le jour où l'upload
+arrive, l'avatar dérivé devient le repli pour les comptes sans image.
+
+Seule la teinte varie d'un compte à l'autre ; saturation et luminosité sont
+fixes, ce qui tient le contraste du texte quelle que soit la couleur tirée.
+
 ### Handing the token to `EventSource`
 
 `EventSource` accepts no headers, so `Authorization: Bearer` is out. Two options,
@@ -371,6 +388,7 @@ src/
     hydra.ts       # Hydra envelope normalisation (member/totalItems/view.next)
     queries.ts     # catalogue + detail hooks, filters -> query params
     planning.ts    # une saison du catalogue, via les filtres season/seasonYear existants
+    profile.ts     # PATCH du compte ; signale que changer d'e-mail périme le jeton
     favorites.ts   # favourites, optimistic toggle with rollback
     progress.ts    # watch/read progress (decimal chapter handling lives here)
     comments.ts    # thread rebuilt client-side from `parent`
@@ -382,6 +400,8 @@ src/
     context.ts     # context object + value type (kept apart for fast refresh)
     AuthContext.tsx / useAuth.ts / RequireAuth.tsx
   components/
+    Avatar.tsx     # initiales + couleur dérivées du pseudo, rien de stocké
+    BrandMark.tsx  # le logo, en SVG inline pour suivre les variables de thème
     MediaCard.tsx · FilterBar.tsx · FavoriteButton.tsx · WatchlistButton.tsx
     ProgressPanel.tsx · CommentThread.tsx · NotificationBell.tsx
     UnitList.tsx   # episodes/chapters: chunking + missing-data fallbacks
@@ -394,6 +414,7 @@ src/
     externalUrl.ts · retryAfter.ts
     progression.ts # règles de progression, sans React donc testables directement
     season.ts      # découpage en cours de diffusion, jumeau d'AnilistSeason côté PHP
+    avatar.ts      # initiales et teinte HSL, dérivées du pseudo par hachage FNV-1a
   mocks/
     data.ts        # catalogue fixtures, typed against the contract
     db.ts          # mutable store: users, favourites, progress, comments, notifications

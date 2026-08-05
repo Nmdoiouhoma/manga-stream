@@ -4,6 +4,7 @@ import { useAuth } from '../auth/useAuth'
 import { useFavorites } from '../api/favorites'
 import { PROGRESS_STATUS_LABELS, PROGRESS_STATUSES, useProgressList } from '../api/progress'
 import { useUpdateProfile } from '../api/profile'
+import { Avatar } from '../components/Avatar'
 import { formatChapterNumber, formatDate } from '../types/media'
 
 /**
@@ -41,9 +42,7 @@ export function ProfilePage() {
       </header>
 
       <section className="panel profile__identity">
-        <div className="profile__avatar" aria-hidden="true">
-          {user.username.slice(0, 2).toUpperCase()}
-        </div>
+        <Avatar name={user.username} size="lg" />
         <div>
           <h2 className="profile__name">{user.username}</h2>
           <p className="muted">{user.email}</p>

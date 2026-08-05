@@ -134,12 +134,13 @@ select {
   letter-spacing: -0.03em;
 }
 
+/* Le carré en dégradé a laissé place au vrai mark (voir BrandMark.tsx). La
+   lueur reste : elle ancre la marque dans le fond sombre. Le filtre suit la
+   silhouette du tracé, là où une `box-shadow` aurait halé un rectangle autour
+   d'un marque-page. */
 .brand__mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent), var(--anime));
-  box-shadow: 0 0 18px rgba(124, 92, 255, 0.55);
+  display: block;
+  filter: drop-shadow(0 0 10px rgba(124, 92, 255, 0.45));
 }
 
 .brand__accent {
@@ -918,13 +919,21 @@ code {
 }
 
 .account__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-muted);
-  max-width: 12ch;
+  /* La troncature vise le pseudo, pas la pastille : la borne passe donc sur le
+     texte, sinon un pseudo long rognerait l'avatar avant les lettres. */
+  max-width: 16ch;
+  white-space: nowrap;
+}
+
+.account__name > :not(.avatar) {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .account__name:hover {
@@ -1273,7 +1282,10 @@ code {
 
 .comment__head {
   display: flex;
-  align-items: baseline;
+  /* `center` et non `baseline` depuis que la pastille est là : une image n'a
+     pas de ligne de base, et l'alignement sur celle-ci la décalait vers le
+     haut par rapport au pseudo. */
+  align-items: center;
   gap: 0.6rem;
 }
 
@@ -1532,17 +1544,37 @@ code {
   gap: 1.2rem;
 }
 
-.profile__avatar {
-  flex: 0 0 64px;
+/* ---------- Avatars ----------
+   Les couleurs sont posées en style inline par le composant : elles sont
+   calculées depuis le pseudo (voir lib/avatar.ts) et ne peuvent donc pas être
+   écrites ici. Le CSS ne gère que la forme et les tailles. */
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-weight: 800;
+  line-height: 1;
+  user-select: none;
+  flex: none;
+}
+
+.avatar--sm {
+  width: 28px;
+  height: 28px;
+  font-size: 0.68rem;
+}
+
+.avatar--md {
+  width: 40px;
+  height: 40px;
+  font-size: 0.9rem;
+}
+
+.avatar--lg {
   width: 64px;
   height: 64px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
   font-size: 1.3rem;
-  background: linear-gradient(135deg, var(--accent), var(--anime));
-  color: #fff;
 }
 
 .profile__name {

@@ -12,6 +12,8 @@ import { RegisterPage } from './pages/RegisterPage'
 import { PasswordForgotPage } from './pages/PasswordForgotPage'
 import { PasswordResetPage } from './pages/PasswordResetPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { Avatar } from './components/Avatar'
+import { BrandMark } from './components/BrandMark'
 import { NotificationBell } from './components/NotificationBell'
 import { RequireAuth } from './auth/RequireAuth'
 import { useAuth } from './auth/useAuth'
@@ -44,7 +46,7 @@ function AppShell({ children }: { children: ReactNode }) {
       <header className="topbar">
         <div className="topbar__inner">
           <NavLink to="/" className="brand">
-            <span className="brand__mark" aria-hidden="true" />
+            <BrandMark />
             manga<span className="brand__accent">stream</span>
           </NavLink>
 
@@ -74,7 +76,8 @@ function AppShell({ children }: { children: ReactNode }) {
             {isAuthenticated ? (
               <div className="account">
                 <Link to="/profile" className="account__name">
-                  {user?.username}
+                  <Avatar name={user?.username ?? ''} size="sm" />
+                  <span>{user?.username}</span>
                 </Link>
                 <button type="button" className="btn btn--ghost btn--sm" onClick={logout}>
                   Déconnexion
