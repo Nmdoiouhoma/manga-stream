@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 
-type LocationState = { from?: string } | null
+type LocationState = { from?: string; notice?: string } | null
 
 export function LoginPage() {
   const { login, isAuthenticated, sessionExpired, acknowledgeExpiry } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const from = (location.state as LocationState)?.from ?? '/'
+  const notice = (location.state as LocationState)?.notice ?? null
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -45,6 +46,16 @@ export function LoginPage() {
         {sessionExpired && (
           <p className="notice notice--warn" role="status">
             Votre session a expiré. Reconnectez-vous pour continuer.
+          </p>
+        )}
+
+        {/* Motif transmis par l'écran qui a mis fin à la session — aujourd'hui le
+            changement d'adresse e-mail, qui périme le jeton parce que l'adresse
+            est l'identifiant. Sans ce message, la redirection passerait pour un
+            bug juste après une modification pourtant réussie. */}
+        {notice && (
+          <p className="notice" role="status">
+            {notice}
           </p>
         )}
 

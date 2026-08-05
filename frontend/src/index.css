@@ -1958,6 +1958,46 @@ code {
   padding-top: 0.25rem;
 }
 
+/* ---------- Profil : édition du compte ---------- */
+/* Même disposition que l'encart recommandations : un texte à gauche, une
+   action à droite. C'est l'état replié, celui qu'on voit presque toujours. */
+.profile__editor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.profile__editor .section__title {
+  margin-top: 0;
+}
+
+.profile__editor p {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+/* Le changement de mot de passe est facultatif : le cadre le sépare
+   visuellement des champs d'identité, qui eux sont toujours envoyés. */
+.fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem 0.2rem;
+  margin: 0.4rem 0 0;
+}
+
+.fieldset > .muted {
+  margin: -0.2rem 0 0.6rem;
+  font-size: 0.85rem;
+}
+
+.form__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 /* ---------- Profil : encart recommandations ---------- */
 .profile__reco {
   display: flex;

@@ -1,7 +1,9 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useFavorites } from '../api/favorites'
 import { PROGRESS_STATUS_LABELS, PROGRESS_STATUSES, useProgressList } from '../api/progress'
+import { useUpdateProfile } from '../api/profile'
 import { formatChapterNumber, formatDate } from '../types/media'
 
 /**
@@ -58,6 +60,8 @@ export function ProfilePage() {
         </button>
       </section>
 
+      <ProfileEditor />
+
       <RecommendationTeaser favoriteCount={favorites.length} />
 
       <section className="stats">
@@ -77,7 +81,7 @@ export function ProfilePage() {
         />
       </section>
 
-      <section className="panel">
+      <section className="panel" id="repartition">
         <h2 className="section__title">Répartition par statut</h2>
         {progressLoading ? (
           <p className="muted">Chargement…</p>
@@ -145,6 +149,192 @@ export function ProfilePage() {
         )}
       </section>
     </div>
+  )
+}
+
+/**
+ * Édition du compte : pseudo, adresse, mot de passe.
+ *
+ * ── Replié par défaut ─────────────────────────────────────────────────────
+ * Le profil se consulte bien plus souvent qu'il ne se modifie. Un formulaire
+ * déployé en permanence donnerait à la page l'allure d'un écran de réglages,
+ * alors qu'on y vient pour ses statistiques.
+ *
+ * ── Changer d'adresse déconnecte, et on le dit avant ──────────────────────
+ * L'identifiant de connexion est l'adresse : la modifier périme le jeton en
+ * cours (vérifié côté backend, voir `api/profile.ts`). Plutôt que de laisser
+ * l'application se déconnecter d'elle-même une requête plus tard, on annonce
+ * la reconnexion, puis on redirige vers l'écran de connexion avec le motif.
+ */
+function ProfileEditor() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const update = useUpdateProfile()
+
+  const [open, setOpen] = useState(false)
+  const [username, setUsername] = useState(user?.username ?? '')
+  const [email, setEmail] = useState(user?.email ?? '')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [nextPassword, setNextPassword] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  if (!user) return null
+
+  const emailWillChange = email.trim() !== user.email
+  const wantsNewPassword = nextPassword.length > 0
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    setSaved(false)
+
+    update.mutate(
+      {
+        username: username.trim(),
+        email: email.trim(),
+        ...(wantsNewPassword
+          ? { password: { current: currentPassword, next: nextPassword } }
+          : {}),
+      },
+      {
+        onSuccess: (result) => {
+          setCurrentPassword('')
+          setNextPassword('')
+
+          if (result.requiresReauthentication) {
+            logout()
+            navigate('/login', {
+              replace: true,
+              state: {
+                notice:
+                  'Votre adresse e-mail a changé. Elle sert d’identifiant : reconnectez-vous avec la nouvelle.',
+              },
+            })
+            return
+          }
+
+          setSaved(true)
+        },
+      },
+    )
+  }
+
+  if (!open) {
+    return (
+      <section className="panel profile__editor">
+        <div>
+          <h2 className="section__title">Mon compte</h2>
+          <p className="muted">Pseudo, adresse e-mail et mot de passe.</p>
+        </div>
+        <button type="button" className="btn btn--ghost" onClick={() => setOpen(true)}>
+          Modifier
+        </button>
+      </section>
+    )
+  }
+
+  return (
+    <section className="panel">
+      <h2 className="section__title">Mon compte</h2>
+
+      <form className="form" onSubmit={handleSubmit}>
+        <label className="field">
+          <span className="field__label">Pseudo</span>
+          <input
+            className="input"
+            type="text"
+            autoComplete="username"
+            required
+            minLength={3}
+            maxLength={50}
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+        </label>
+
+        <label className="field">
+          <span className="field__label">Adresse e-mail</span>
+          <input
+            className="input"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+
+        {emailWillChange && (
+          <p className="notice notice--warn" role="status">
+            L’adresse sert d’identifiant de connexion : la changer met fin à cette
+            session, et il faudra vous reconnecter avec la nouvelle.
+          </p>
+        )}
+
+        <fieldset className="fieldset">
+          <legend className="field__label">Nouveau mot de passe</legend>
+          <p className="muted">Laissez vide pour le conserver.</p>
+
+          <label className="field">
+            <span className="field__label">Nouveau mot de passe</span>
+            <input
+              className="input"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={nextPassword}
+              onChange={(event) => setNextPassword(event.target.value)}
+            />
+          </label>
+
+          {wantsNewPassword && (
+            <label className="field">
+              <span className="field__label">Mot de passe actuel</span>
+              <input
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+              />
+            </label>
+          )}
+        </fieldset>
+
+        {update.isError && (
+          <p className="form__error" role="alert">
+            {update.error instanceof Error ? update.error.message : 'Modification impossible'}
+          </p>
+        )}
+
+        {saved && (
+          <p className="notice" role="status">
+            Profil mis à jour.
+          </p>
+        )}
+
+        <div className="form__actions">
+          <button type="submit" className="btn btn--primary" disabled={update.isPending}>
+            {update.isPending ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => {
+              setOpen(false)
+              setUsername(user.username)
+              setEmail(user.email)
+              setCurrentPassword('')
+              setNextPassword('')
+              setSaved(false)
+              update.reset()
+            }}
+          >
+            Annuler
+          </button>
+        </div>
+      </form>
+    </section>
   )
 }
 
