@@ -16,7 +16,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use App\Repository\CommentRepository;
-use App\State\CommentNotifyProcessor;
+use App\State\CommentCreationProcessor;
 use App\Validator\ExactlyOneMediaTarget;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -38,7 +38,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new GetCollection(),
         new Get(normalizationContext: ['groups' => ['comment:read', 'comment:item:read']]),
-        new Post(security: "is_granted('ROLE_USER')", processor: CommentNotifyProcessor::class),
+        new Post(security: "is_granted('ROLE_USER')", processor: CommentCreationProcessor::class),
         new Patch(security: "is_granted('ROLE_USER') and object.getUser() === user", securityMessage: 'Seul l\'auteur peut modifier son commentaire.'),
         new Delete(
             security: "is_granted('ROLE_ADMIN') or (is_granted('ROLE_USER') and object.getUser() === user)",

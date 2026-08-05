@@ -7,6 +7,7 @@ import {
   type CommentNode,
 } from '../api/comments'
 import { useAuth } from '../auth/useAuth'
+import { useCommentStream } from '../hooks/useCommentStream'
 import { formatDate, type MediaKind } from '../types/media'
 
 const MAX_LENGTH = 2000
@@ -14,6 +15,10 @@ const MAX_LENGTH = 2000
 export function CommentThread({ kind, targetIri }: { kind: MediaKind; targetIri: string }) {
   const { user, isAuthenticated } = useAuth()
   const { comments, isLoading, isError, error } = useComments(kind, targetIri)
+  // Le fil se met à jour tout seul tant qu'on le regarde. Rien n'en dépend à
+  // l'affichage : sans hub, sans jeton ou hors connexion, le composant se
+  // comporte exactement comme avant.
+  useCommentStream(kind, targetIri)
   const addComment = useAddComment()
   const deleteComment = useDeleteComment(targetIri)
 

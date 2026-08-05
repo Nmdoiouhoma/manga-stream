@@ -297,14 +297,37 @@ which are not equivalent:
 
 The cookie is cleared on logout and on session expiry — it is a bearer token.
 
-### Le fil de commentaires suit la cloche
+### Le fil de commentaires a son propre abonnement
 
-Être prévenu d'une réponse qu'on ne voit pas est absurde : la cloche
-s'incrémentait pendant que le fil restait figé jusqu'au rechargement. Un
-événement `COMMENT_REPLY` invalide donc aussi `['comments']`. Le préfixe seul,
-sans l'œuvre : le payload porte le commentaire et son parent, **jamais** l'IRI
-du média — cibler précisément demanderait de l'ajouter côté backend. Le coût
-est nul, React Query ne refetchant que les requêtes *actives*.
+Il a d'abord suivi la cloche, faute de mieux : un événement `COMMENT_REPLY`
+invalidait au passage `['comments']`. Ça ne couvrait qu'une personne au monde,
+le destinataire de la réponse — jamais les autres visiteurs de la fiche, jamais
+un commentaire racine, qui ne produisait aucun événement du tout.
+
+Le backend publie désormais sur un topic scopé par œuvre, `CommentTopics` :
+
+```
+/api/animes/{id}/comments
+/api/mangas/{id}/comments
+```
+
+**Public**, contrairement aux notifications, et c'est délibéré : le jeton
+abonné ne porte que le topic personnel de son titulaire, donc une update privée
+sur ce topic ne serait remise à personne. Rien n'est divulgué au passage,
+`GET /api/comments?anime=…` étant déjà ouvert. Le raisonnement complet est dans
+`App\Service\Comment\CommentTopics`.
+
+Côté front, `useCommentStream(kind, targetIri)` (monté par `CommentThread`)
+s'abonne et invalide `commentsQueryKey(targetIri)` — l'œuvre affichée, cette
+fois, et non plus le préfixe entier. Le transport (URL du hub, cookie ou
+`?authorization=`, renouvellement du jeton) est commun à la cloche et au fil :
+il vit dans `useMercureTransport`, et le jeton reste unique puisque c'est une
+requête React Query partagée.
+
+Ce que cela ne couvre pas : le hub refuse l'accès anonyme, un visiteur
+déconnecté n'a donc pas de direct. Ni la suppression d'un commentaire, qui
+passe par un autre processor et ne diffuse rien — un message supprimé ailleurs
+reste affiché jusqu'au prochain chargement.
 
 ### Publier un commentaire : ce qui a été trouvé, et ce qui ne l'a pas été
 

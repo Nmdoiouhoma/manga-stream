@@ -22,6 +22,12 @@ use App\Tests\Double\RecordingHub;
  * restreindre les abonnements ne cloisonne rien tant que les updates partent en
  * public, puisque le hub diffuse alors une update publique à *tous* les abonnés du
  * topic. C'est un test de sécurité, pas de confort.
+ *
+ * ⚠️ Un même POST produit désormais **deux** publications : la notification couverte
+ * ici, et la diffusion du fil couverte par {@see CommentBroadcastTest}. Les
+ * assertions de ce fichier sont donc filtrées sur le topic personnel du destinataire
+ * — compter les updates du hub sans filtre reviendrait à mélanger les deux, et à
+ * faire échouer ces tests au premier commentaire diffusé.
  */
 final class MercureNotificationTest extends ApiTestCase
 {
@@ -31,6 +37,17 @@ final class MercureNotificationTest extends ApiTestCase
         $hub = self::getContainer()->get(RecordingHub::class);
 
         return $hub;
+    }
+
+    /**
+     * Les seules updates qui nous concernent ici : celles du topic personnel de
+     * `$user`.
+     *
+     * @return list<\Symfony\Component\Mercure\Update>
+     */
+    private function notificationsFor(User $user): array
+    {
+        return $this->hub()->updatesFor(NotificationTopics::forUserId((int) $this->reattach($user)->getId()));
     }
 
     /**
@@ -98,7 +115,7 @@ final class MercureNotificationTest extends ApiTestCase
 
         $this->replyTo($parent, $author);
 
-        $updates = $this->hub()->updates();
+        $updates = $this->notificationsFor($recipient);
         self::assertCount(1, $updates);
         self::assertTrue($updates[0]->isPrivate(), 'Une update publique serait diffusée à tous les abonnés du topic.');
     }
@@ -114,7 +131,7 @@ final class MercureNotificationTest extends ApiTestCase
         $recipientId = (int) $this->reattach($recipient)->getId();
         $authorId = (int) $this->reattach($author)->getId();
 
-        $updates = $this->hub()->updates();
+        $updates = $this->notificationsFor($recipient);
         self::assertSame(
             [NotificationTopics::forUserId($recipientId)],
             $updates[0]->getTopics(),
@@ -146,7 +163,7 @@ final class MercureNotificationTest extends ApiTestCase
 
         $this->replyTo($parent, $author);
 
-        $payload = RecordingHub::payloadOf($this->hub()->updates()[0]);
+        $payload = RecordingHub::payloadOf($this->notificationsFor($recipient)[0]);
 
         self::assertSame('Notification', $payload['@type']);
         self::assertSame('/api/contexts/Notification', $payload['@context']);
@@ -165,10 +182,16 @@ final class MercureNotificationTest extends ApiTestCase
         $this->replyTo($parent, $user);
 
         self::assertResponseStatusCodeSame(201);
-        self::assertSame([], $this->hub()->updates(), 'Se notifier soi-même gonflerait le compteur de non-lus pour rien.');
+        self::assertSame([], $this->notificationsFor($user), 'Se notifier soi-même gonflerait le compteur de non-lus pour rien.');
         self::assertSame([], $this->em()->getRepository(Notification::class)->findBy(['user' => $this->reattach($user)]));
     }
 
+    /**
+     * Personne n'est destinataire d'un commentaire racine : aucune notification, ni en
+     * base ni sur un topic personnel. Le fil de l'œuvre, lui, est bien réveillé — c'est
+     * {@see CommentBroadcastTest::testATopLevelCommentIsBroadcastOnTheMediaThread()}
+     * qui le couvre.
+     */
     public function testATopLevelCommentNotifiesNobody(): void
     {
         $user = $this->createUser('racine@example.com', 'racine');
@@ -180,7 +203,8 @@ final class MercureNotificationTest extends ApiTestCase
         ]);
 
         self::assertResponseStatusCodeSame(201);
-        self::assertSame([], $this->hub()->updates());
+        self::assertSame([], $this->notificationsFor($user));
+        self::assertSame([], $this->em()->getRepository(Notification::class)->findBy(['user' => $this->reattach($user)]));
     }
 
     /**

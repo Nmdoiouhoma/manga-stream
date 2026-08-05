@@ -481,6 +481,33 @@ Le hub n'accepte de publier qu'avec un JWT signé en HS256 avec
 les origines listées dans `MERCURE_CORS_ORIGINS` (dont
 `http://localhost:5173`, le serveur Vite).
 
+### Deux familles de topics, deux visibilités opposées
+
+Elles ne se ressemblent pas, et les confondre casse quelque chose dans les deux
+sens.
+
+| Topic                        | Source de vérité      | Portée              | Publication |
+| ---------------------------- | --------------------- | ------------------- | ----------- |
+| `/api/users/{id}/notifications` | `NotificationTopics` | un seul utilisateur | **privée**  |
+| `/api/animes/{id}/comments`  | `CommentTopics`       | tous les visiteurs  | **publique** |
+| `/api/mangas/{id}/comments`  | `CommentTopics`       | tous les visiteurs  | **publique** |
+
+Une notification **doit** partir en privé : le hub ne remet alors l'update
+qu'aux abonnés dont le JWT porte le topic, et c'est le seul verrou qui
+cloisonne réellement — restreindre les abonnements ne suffit pas, une update
+publique étant diffusée à *tous* les abonnés du topic.
+
+Un fil de commentaires **doit** partir en public, pour la raison exactement
+inverse : le jeton abonné remis au navigateur ne porte que le topic personnel
+de son titulaire, et il n'était pas question de l'élargir œuvre par œuvre — ni
+d'y placer un gabarit RFC 6570, qui rouvrirait au passage les notifications des
+autres comptes. Publiée en privé, une update de commentaire ne serait donc
+remise à personne. Elle ne divulgue rien : `GET /api/comments?anime=…` est déjà
+public.
+
+Conséquence assumée : le hub refusant l'accès anonyme, un visiteur déconnecté
+ne reçoit pas le direct. Il voit le fil au chargement et au rafraîchissement.
+
 Tester la chaîne complète sans écrire une ligne de code — dans deux terminaux :
 
 ```bash

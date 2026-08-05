@@ -19,6 +19,13 @@
  * aller-retour de plus est un prix acceptable pour n'avoir qu'un chemin de
  * lecture.
  *
+ * ── Le fil de commentaires n'est plus de son ressort ──────────────────────
+ * Ce hook invalidait aussi `['comments']` sur réception d'un `COMMENT_REPLY`,
+ * faute de mieux : c'était le seul événement qui traversait le hub. Cela ne
+ * couvrait que le destinataire de la réponse, jamais les autres visiteurs de
+ * la fiche, et jamais les commentaires racines. Le fil a maintenant son propre
+ * abonnement, scopé par œuvre — voir {@link useCommentStream}.
+ *
  * ── Dégradation ───────────────────────────────────────────────────────────
  * Chaque maillon peut manquer sans casser l'application : pas de hub
  * configuré, pas de jeton abonné (backend antérieur, ou émission en échec —
@@ -26,29 +33,12 @@
  * les cas la cloche continue de fonctionner au rafraîchissement.
  */
 import { useCallback, useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useMercure, type MercureStatus } from './useMercure'
+import { useMercureTransport } from './useMercureTransport'
 import { useAuth } from '../auth/useAuth'
-import { MERCURE_URL, mercureTopicsFor } from '../config'
+import { mercureTopicsFor } from '../config'
 import { notificationsQueryKey } from '../api/notifications'
-import {
-  fetchMercureSubscription,
-  hubAcceptsDocumentCookie,
-  installSubscriberCookie,
-  isSubscriptionExpired,
-  millisecondsUntilExpiry,
-  type MercureSubscription,
-} from '../api/mercure'
-import { getSession } from '../auth/session'
-
-/** Marge avant expiration en deçà de laquelle le jeton est renouvelé. */
-const RENEW_MARGIN_MS = 60_000
-/** Plancher, pour ne pas boucler sur un jeton de très courte durée. */
-const MIN_RENEW_INTERVAL_MS = 30_000
-
-function subscriptionQueryKey(userIri: string | null) {
-  return ['mercure-subscription', userIri] as const
-}
 
 /** Lit `data.user`, que ce soit une IRI ou un objet embarqué. */
 function ownerIriOf(data: unknown): string | null {
@@ -63,85 +53,11 @@ function ownerIriOf(data: unknown): string | null {
   return null
 }
 
-/**
- * Vrai pour une notification annonçant une réponse à un commentaire.
- *
- * Aussi défensif qu'`ownerIriOf` : le hub peut livrer n'importe quelle forme,
- * et un type inconnu doit simplement ne rien déclencher plutôt que lever.
- */
-function isCommentReply(data: unknown): boolean {
-  if (typeof data !== 'object' || data === null) return false
-  return (data as Record<string, unknown>).type === 'COMMENT_REPLY'
-}
-
-/**
- * L'abonnement courant : celui reçu à la connexion tant qu'il est valide,
- * sinon un neuf demandé au backend.
- *
- * `refetchInterval` est calé sur l'expiration du jeton plutôt que sur un
- * intervalle fixe : le hub coupe la connexion quand le jeton meurt, et se
- * réveiller *après* la coupure ferait perdre des événements le temps du
- * renouvellement.
- */
-function useMercureSubscription(enabled: boolean, userIri: string | null) {
-  return useQuery<MercureSubscription | null>({
-    queryKey: subscriptionQueryKey(userIri),
-    enabled: enabled && userIri !== null,
-    // Réessayer immédiatement ne sert à rien : soit l'endpoint n'existe pas
-    // encore, soit le backend a un souci. Le `refetchInterval` reprend la main.
-    retry: false,
-    refetchOnWindowFocus: true,
-    refetchInterval: (query) => {
-      const subscription = query.state.data
-      if (!subscription) return MIN_RENEW_INTERVAL_MS * 4
-      const remaining = millisecondsUntilExpiry(subscription)
-      if (remaining === null) return false // Jeton sans `exp` : rien à renouveler.
-      return Math.max(MIN_RENEW_INTERVAL_MS, remaining - RENEW_MARGIN_MS)
-    },
-    queryFn: async () => {
-      const session = getSession()
-      if (!session) return null
-
-      // Celui de la connexion, s'il a encore de la marge : évite un appel
-      // réseau au démarrage, ce qui est tout l'intérêt de l'avoir reçu là.
-      const fromLogin = session.mercure
-      if (fromLogin && !isSubscriptionExpired(fromLogin, RENEW_MARGIN_MS / 1000)) {
-        return fromLogin
-      }
-
-      return fetchMercureSubscription(session.token)
-    },
-  })
-}
-
 export function useNotificationStream(): MercureStatus {
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const userIri = user?.iri ?? null
-  const isAuthenticated = userIri !== null
-
-  const { data: subscription } = useMercureSubscription(isAuthenticated, userIri)
-
-  // Le hub sait mieux que `VITE_MERCURE_URL` où il est joignable : il annonce
-  // son URL publique avec le jeton. L'env var reste le repli.
-  const hubUrl = subscription?.hubUrl || MERCURE_URL || null
-
-  /**
-   * `EventSource` n'accepte aucun en-tête : le jeton passe par le cookie
-   * `mercureAuthorization` (recommandé, et ce que l'infra a câblé) ou, à
-   * défaut, par `?authorization=`. Un cookie posé en JS n'atteint que les
-   * hôtes du même site — au-delà, seul le paramètre d'URL reste possible,
-   * avec l'exposition du jeton dans les journaux que cela implique.
-   */
-  const useCookie = subscription ? hubAcceptsDocumentCookie(subscription.hubUrl) : false
-  const authorization = subscription && !useCookie ? subscription.token : null
-
-  // Écrire dans `document.cookie` est un effet de bord : il n'a rien à faire
-  // dans le corps d'un composant, que React peut rendre deux fois.
-  useEffect(() => {
-    if (!subscription || !useCookie) return
-    installSubscriberCookie(subscription)
-  }, [subscription, useCookie])
+  const { hubUrl, withCredentials, authorization, enabled, userIri, personalTopic, renew } =
+    useMercureTransport()
 
   /**
    * Le topic vient du backend quand un abonnement existe — il est alors
@@ -149,7 +65,7 @@ export function useNotificationStream(): MercureStatus {
    * Sans abonnement, repli sur la convention configurée, qui reste soumise au
    * garde-fou « tout topic doit être cloisonné par utilisateur ».
    */
-  const topics = subscription ? [subscription.topic] : mercureTopicsFor(userIri, user?.id ?? null)
+  const topics = personalTopic ? [personalTopic] : mercureTopicsFor(userIri, user?.id ?? null)
 
   const onMessage = useCallback(
     (data: unknown) => {
@@ -159,19 +75,6 @@ export function useNotificationStream(): MercureStatus {
       // et des publications privées, ce cas ne doit jamais se produire.
       if (owner !== null && userIri !== null && owner !== userIri) return
       void queryClient.invalidateQueries({ queryKey: notificationsQueryKey(userIri) })
-
-      // Être prévenu d'une réponse qu'on ne voit pas est absurde : la cloche
-      // s'incrémentait en direct pendant que le fil restait figé jusqu'au
-      // rechargement. On invalide donc aussi les commentaires.
-      //
-      // Le préfixe seul, sans l'œuvre concernée : le payload porte le
-      // commentaire et son parent, jamais l'IRI du média. Cibler précisément
-      // demanderait de l'ajouter côté backend. Le coût est nul ici — React
-      // Query ne refetch que les requêtes *actives*, donc au plus la fiche
-      // ouverte à cet instant.
-      if (isCommentReply(data)) {
-        void queryClient.invalidateQueries({ queryKey: ['comments'] })
-      }
     },
     [queryClient, userIri],
   )
@@ -180,8 +83,8 @@ export function useNotificationStream(): MercureStatus {
     hubUrl,
     topics,
     onMessage,
-    enabled: isAuthenticated,
-    withCredentials: useCookie,
+    enabled,
+    withCredentials,
     authorization,
   })
 
@@ -190,6 +93,11 @@ export function useNotificationStream(): MercureStatus {
    * qu'`EventSource` ne distingue pas d'une coupure réseau. On redemande donc
    * un abonnement — **une seule fois** par passage en `unavailable`, sinon un
    * hub éteint ferait boucler les requêtes vers le backend.
+   *
+   * Ce renouvellement n'est déclenché qu'ici, bien que le fil de commentaires
+   * partage le même jeton : les deux abonnements tombent ensemble puisqu'ils
+   * tombent pour la même raison, et deux relances simultanées doubleraient les
+   * requêtes sans rien réparer de plus.
    */
   const retriedRef = useRef(false)
   useEffect(() => {
@@ -197,10 +105,10 @@ export function useNotificationStream(): MercureStatus {
       retriedRef.current = false
       return
     }
-    if (retriedRef.current || !isAuthenticated) return
+    if (retriedRef.current || !enabled) return
     retriedRef.current = true
-    void queryClient.invalidateQueries({ queryKey: subscriptionQueryKey(userIri) })
-  }, [status, isAuthenticated, queryClient, userIri])
+    renew()
+  }, [status, enabled, renew])
 
   return status
 }
