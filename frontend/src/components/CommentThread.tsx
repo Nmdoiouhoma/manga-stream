@@ -151,7 +151,10 @@ function CommentItem({
       <header className="comment__head">
         <span className="comment__author">{comment.authorName}</span>
         {isPending ? (
-          <span className="comment__date">Envoi…</span>
+          // Formulé autrement que le bouton (« Envoi… ») : les deux
+          // apparaissent en même temps, et deux libellés identiques à l'écran
+          // laissent croire à un doublon.
+          <span className="comment__date">envoi en cours</span>
         ) : (
           comment.createdAt && (
             <time className="comment__date" dateTime={comment.createdAt}>
