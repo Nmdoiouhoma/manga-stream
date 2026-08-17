@@ -100,7 +100,15 @@ COPY --from=infra backend/php/php-fpm-prod.conf /usr/local/etc/php-fpm.d/zzz-man
 USER app
 
 COPY --chown=app:app composer.json composer.lock ./
+# Repli sur `--prefer-source` si les archives ne descendent pas. Vécu le
+# 2026-08-17 depuis l'EC2 : `codeload.github.com` répond 429 à toute demande
+# anonyme venant de cette IP — pendant que `api.github.com` sert ses 60
+# requêtes et qu'un `git clone` passe en une seconde. Le build échouait donc
+# sur la première dépendance venue, sans que rien ne soit cassé côté code.
+# Les clones sont plus lents et laissent un `.git` par paquet, mais
+# composer.lock fige les mêmes révisions : le vendor obtenu est identique.
 RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --no-progress \
+    || composer install --no-dev --no-scripts --no-interaction --prefer-source --no-progress \
     && composer clear-cache
 
 # Ce `COPY .` est filtré par infra/backend/Dockerfile.dockerignore : sans lui,
