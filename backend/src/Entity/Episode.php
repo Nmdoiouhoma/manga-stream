@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\DateFilter;
 use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
 use ApiPlatform\Doctrine\Orm\Filter\RangeFilter;
 use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
@@ -41,6 +42,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(SearchFilter::class, properties: ['anime' => 'exact', 'title' => 'ipartial', 'number' => 'exact'])]
 #[ApiFilter(RangeFilter::class, properties: ['number', 'duration'])]
 #[ApiFilter(OrderFilter::class, properties: ['number', 'airDate'])]
+// Pour une automatisation externe (n8n…) qui interroge périodiquement « qu'est-ce
+// qui est sorti depuis mon dernier passage » via `?airDate[after]=...`, plutôt que
+// de reposer sur la pagination d'une collection triée.
+#[ApiFilter(DateFilter::class, properties: ['airDate'])]
 class Episode
 {
     #[ORM\Id]
