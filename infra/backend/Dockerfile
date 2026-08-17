@@ -113,8 +113,13 @@ COPY --chown=app:app composer.json composer.lock ./
 # Passé par `--mount=type=secret`, il n'apparaît dans aucune couche de l'image
 # ni dans `docker history`. Construire avec :
 #   docker build --secret id=composer_auth,src=/chemin/auth.json …
-RUN --mount=type=secret,id=composer_auth,env=COMPOSER_AUTH \
-    { [ -n "$COMPOSER_AUTH" ] || unset COMPOSER_AUTH; } \
+# `mode=0444` parce que ce stage tourne en `app` : monté par défaut, le fichier
+# appartient à root en 0400 et l'utilisateur ne peut pas le lire. Et on lit le
+# fichier plutôt que d'utiliser `env=`, réservé au frontend Dockerfile 1.10+
+# alors que ce fichier est épinglé en 1.7.
+RUN --mount=type=secret,id=composer_auth,mode=0444 \
+    { [ -s /run/secrets/composer_auth ] \
+      && export COMPOSER_AUTH="$(cat /run/secrets/composer_auth)" || true; } \
     && { composer install --no-dev --no-scripts --no-interaction --prefer-dist --no-progress \
     || composer install --no-dev --no-scripts --no-interaction --prefer-source --no-progress; } \
     && composer clear-cache
