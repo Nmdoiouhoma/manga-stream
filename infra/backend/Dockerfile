@@ -107,8 +107,16 @@ COPY --chown=app:app composer.json composer.lock ./
 # sur la première dépendance venue, sans que rien ne soit cassé côté code.
 # Les clones sont plus lents et laissent un `.git` par paquet, mais
 # composer.lock fige les mêmes révisions : le vendor obtenu est identique.
-RUN composer install --no-dev --no-scripts --no-interaction --prefer-dist --no-progress \
-    || composer install --no-dev --no-scripts --no-interaction --prefer-source --no-progress \
+# Le secret `composer_auth` est FACULTATIF : sans lui, la variable reste vide et
+# Composer télécharge en anonyme, comme avant. Avec lui — un JSON de la forme
+# {"github-oauth":{"github.com":"ghp_…"}} — la limite anonyme de GitHub saute.
+# Passé par `--mount=type=secret`, il n'apparaît dans aucune couche de l'image
+# ni dans `docker history`. Construire avec :
+#   docker build --secret id=composer_auth,src=/chemin/auth.json …
+RUN --mount=type=secret,id=composer_auth,env=COMPOSER_AUTH \
+    { [ -n "$COMPOSER_AUTH" ] || unset COMPOSER_AUTH; } \
+    && { composer install --no-dev --no-scripts --no-interaction --prefer-dist --no-progress \
+    || composer install --no-dev --no-scripts --no-interaction --prefer-source --no-progress; } \
     && composer clear-cache
 
 # Ce `COPY .` est filtré par infra/backend/Dockerfile.dockerignore : sans lui,
